@@ -9,9 +9,22 @@
  */
 import { toPixels } from '../../aim/index.js';
 
+/** Colours the game uses for special-target text and effects. */
+export const KIND_COLORS = {
+  gold: '#e0a100',
+  bomb: '#e5484d',
+  explosion: '#ff9a1f',
+};
+
 const COLORS = {
-  rings: ['#f0414f', '#ffffff', '#f0414f'], // bullseye, middle, outer
+  // Rings: bullseye, middle, outer.
+  rings: ['#f0414f', '#ffffff', '#f0414f'],
   ringEdge: '#b3343a',
+  goldRings: ['#f5b700', '#fff4c2', '#f5b700'],
+  goldEdge: '#b98900',
+  bombBody: '#2b3440',
+  bombShine: '#56637a',
+  fuse: '#8a6d3b',
   timer: 'rgb(29 39 51 / 0.35)',
   puff: 'rgb(107 119 133 / 0.6)',
   outline: '#ffffff',
@@ -27,7 +40,7 @@ const easeOut = (t) => 1 - (1 - t) ** 3;
 export function createRenderer(canvas, config) {
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
   let size = { width: 0, height: 0 };
-  /** @type {Array<{ kind: 'burst' | 'points' | 'puff', x: number, y: number, at: number, color?: string, text?: string, angles?: number[] }>} */
+  /** @type {Array<{ kind: 'burst' | 'points' | 'puff', x: number, y: number, at: number, color?: string, text?: string, angles?: number[], spread?: number }>} */
   let effects = [];
 
   /** Screen heights → pixels. */
@@ -59,17 +72,8 @@ export function createRenderer(canvas, config) {
     ctx.globalAlpha = Math.max(0, alpha);
     ctx.translate(x, y);
     ctx.scale(scale, scale);
-    // Rings from the outside in, so each smaller one paints over the last.
-    const rings = config.rings;
-    for (let i = rings.length - 1; i >= 0; i--) {
-      ctx.beginPath();
-      ctx.arc(0, 0, radius * rings[i].upTo, 0, Math.PI * 2);
-      ctx.fillStyle = COLORS.rings[i % COLORS.rings.length];
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = COLORS.ringEdge;
-      ctx.stroke();
-    }
+    if (target.kind === 'bomb') drawBomb(radius, now);
+    else drawRings(radius, target.kind === 'gold', now);
     // A thin arc around the outside shows how much time the target has left.
     const lifeLeft = Math.max(0, remaining / (target.expiresAt - target.bornAt));
     ctx.beginPath();
@@ -81,6 +85,70 @@ export function createRenderer(canvas, config) {
     ctx.restore();
   }
 
+  /** A ring target. Gold ones glow and have a highlight sweeping around them. */
+  function drawRings(radius, gold, now) {
+    const fills = gold ? COLORS.goldRings : COLORS.rings;
+    const rings = config.rings;
+    if (gold) {
+      ctx.shadowColor = KIND_COLORS.gold;
+      ctx.shadowBlur = 18;
+    }
+    // Rings from the outside in, so each smaller one paints over the last.
+    for (let i = rings.length - 1; i >= 0; i--) {
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * rings[i].upTo, 0, Math.PI * 2);
+      ctx.fillStyle = fills[i % fills.length];
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = gold ? COLORS.goldEdge : COLORS.ringEdge;
+      ctx.stroke();
+    }
+    if (gold) {
+      // The shine: a short white arc that circles the target about once a second.
+      const angle = (now / 1000) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.8, angle, angle + 0.9);
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgb(255 255 255 / 0.9)';
+      ctx.stroke();
+    }
+  }
+
+  /** A bomb: dark body, a shine, and a fuse with a flickering spark. */
+  function drawBomb(radius, now) {
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.bombBody;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-radius * 0.35, -radius * 0.35, radius * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.bombShine;
+    ctx.fill();
+
+    // The fuse curls up and to the right from the top of the bomb.
+    const tip = { x: radius * 0.75, y: -radius * 1.25 };
+    ctx.beginPath();
+    ctx.moveTo(radius * 0.45, -radius * 0.8);
+    ctx.quadraticCurveTo(radius * 0.5, -radius * 1.2, tip.x, tip.y);
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = COLORS.fuse;
+    ctx.stroke();
+
+    // The spark flickers by changing size quickly.
+    const flicker = 5 + Math.sin(now / 45) * 2 + Math.sin(now / 17) * 1.5;
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, flicker, 0, Math.PI * 2);
+    ctx.fillStyle = KIND_COLORS.explosion;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, flicker * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff4c2';
+    ctx.fill();
+  }
+
   function drawEffect(effect, now) {
     const { burstMs, pointsMs, puffMs } = config.effects;
     const { x, y } = px(effect);
@@ -90,7 +158,7 @@ export function createRenderer(canvas, config) {
     if (effect.kind === 'burst') {
       // Sparks flying outwards from the hit, fading as they go.
       const t = age / burstMs;
-      const distance = easeOut(t) * size.height * 0.12;
+      const distance = easeOut(t) * size.height * 0.12 * effect.spread;
       ctx.globalAlpha = 1 - t;
       ctx.fillStyle = effect.color;
       for (const angle of effect.angles) {
@@ -171,14 +239,22 @@ export function createRenderer(canvas, config) {
   return {
     resize,
 
-    /** Sparks at a hit. */
-    burst(position, color, now) {
-      const count = config.effects.burstParticles;
+    /**
+     * Sparks at a hit. `big` bursts (gold, bombs) have more sparks that fly further.
+     *
+     * @param {{ x: number, y: number }} position
+     * @param {string} color
+     * @param {number} now
+     * @param {{ big?: boolean }} [options]
+     */
+    burst(position, color, now, { big = false } = {}) {
+      const spread = big ? config.effects.bigBurstScale : 1;
+      const count = Math.round(config.effects.burstParticles * spread);
       const angles = Array.from(
         { length: count },
         (_, i) => (i / count) * Math.PI * 2 + Math.random() * 0.4,
       );
-      effects.push({ kind: 'burst', ...position, color, angles, at: now });
+      effects.push({ kind: 'burst', ...position, color, angles, spread, at: now });
     },
 
     /** Floating score text. */

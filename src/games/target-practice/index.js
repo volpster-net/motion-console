@@ -15,7 +15,7 @@ import { createAimTracker, loadAimSettings } from '../../aim/index.js';
 import { playerColor, playerLabel } from '../../core/players.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
 import { loadPersonalBest, savePersonalBest } from './personal-best.js';
-import { createRenderer } from './render.js';
+import { createRenderer, KIND_COLORS } from './render.js';
 import { createRound } from './round.js';
 import { createSounds } from './sounds.js';
 
@@ -41,7 +41,7 @@ export const CONFIG = {
   targets: {
     maxOnScreen: 3,
     /** Outer ring size, in screen heights. Targets shrink as the round goes on. */
-    radius: { start: 0.09, end: 0.05 },
+    radius: { start: 0.09, end: 0.035 },
     /** How long a target stays up if nobody hits it. */
     lifetimeMs: { start: 2200, end: 1300 },
     /** How often a new target appears (while there's room for one). */
@@ -66,6 +66,30 @@ export const CONFIG = {
     { name: 'outer', upTo: 1, points: 10 },
   ],
 
+  /**
+   * Special targets. `chance` is the odds that a new target is that kind
+   * (0.12 = about 1 in 8); anything else is a normal target. `sizeScale` and
+   * `lifetimeScale` multiply a normal target's size and time on screen.
+   */
+  specials: {
+    gold: {
+      chance: 0.12,
+      /** Ring points are multiplied by this, on top of any streak multiplier. */
+      pointsMultiplier: 3,
+      sizeScale: 0.8,
+      lifetimeScale: 0.7,
+    },
+    bomb: {
+      chance: 0.1,
+      /** Points lost for shooting one (the score never goes below 0). It also resets the streak. */
+      penalty: 100,
+      sizeScale: 1,
+      lifetimeScale: 1.3,
+      /** No bombs this early in the round, so players can warm up. */
+      notBeforeMs: 5000,
+    },
+  },
+
   /** Consecutive hits needed for each score multiplier. A miss resets the streak. */
   streak: [
     { from: 5, multiplier: 2 },
@@ -75,6 +99,8 @@ export const CONFIG = {
   /** Phone buzz patterns in ms: one number, or buzz/pause/buzz… */
   vibration: {
     hit: [70, 40, 90],
+    gold: [60, 30, 60, 30, 140],
+    bomb: [350],
     miss: 20,
   },
 
@@ -83,6 +109,8 @@ export const CONFIG = {
     fadeOutMs: 250,
     burstMs: 450,
     burstParticles: 14,
+    /** Gold and bomb bursts use this many times more sparks, flying this much further. */
+    bigBurstScale: 2,
     pointsMs: 800,
     puffMs: 300,
   },
@@ -214,6 +242,10 @@ function createSession(container, controller) {
         Bullseye, middle, outer: <b>${rings}</b> points.
         ${CONFIG.streak.map((rule) => `<b>${rule.from}</b> hits in a row: <b>×${rule.multiplier}</b>`).join(', ')}.
       </p>
+      <p class="tp-rules">
+        <span class="tp-kind tp-kind-gold"></span> Gold is worth <b>×${CONFIG.specials.gold.pointsMultiplier}</b>.
+        <span class="tp-kind tp-kind-bomb"></span> Don't shoot bombs: <b>−${CONFIG.specials.bomb.penalty}</b> and your streak resets.
+      </p>
       <p class="tp-cta">${
         player
           ? `<span class="tp-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Pull the trigger to start`
@@ -254,6 +286,8 @@ function createSession(container, controller) {
         <div><dt>Accuracy</dt><dd>${Math.round(results.accuracy * 100)}%</dd></div>
         <div><dt>Hits</dt><dd>${results.hits} / ${results.shots}</dd></div>
         <div><dt>Best streak</dt><dd>${results.bestStreak}</dd></div>
+        <div><dt>Gold hit</dt><dd>${results.goldHits}</dd></div>
+        <div><dt>Bombs hit</dt><dd>${results.bombsHit}</dd></div>
         <div><dt>Personal best</dt><dd>${personalBest}</dd></div>
       </dl>
       <p class="tp-cta">Pull the trigger to play again</p>`;
@@ -293,13 +327,23 @@ function createSession(container, controller) {
     const aim = tracker.get(player.id);
     const shot = round.shoot(aim);
     sounds.shoot();
-    if (shot.hit) {
+    if (shot.outcome === 'hit' && shot.target.kind === 'gold') {
+      renderer.burst(shot.target, KIND_COLORS.gold, now, { big: true });
+      renderer.points(shot.target, `+${shot.points} ×${shot.multiplier}`, KIND_COLORS.gold, now);
+      sounds.gold();
+      controller.vibrate(player.id, CONFIG.vibration.gold);
+    } else if (shot.outcome === 'hit') {
       const color = playerColor(player.slot);
       renderer.burst(shot.target, color, now);
       const text = shot.multiplier > 1 ? `+${shot.points} ×${shot.multiplier}` : `+${shot.points}`;
       renderer.points(shot.target, text, color, now);
       sounds.hit(CONFIG.rings.indexOf(shot.ring));
       controller.vibrate(player.id, CONFIG.vibration.hit);
+    } else if (shot.outcome === 'bomb') {
+      renderer.burst(shot.target, KIND_COLORS.explosion, now, { big: true });
+      renderer.points(shot.target, `−${-shot.points}`, KIND_COLORS.bomb, now);
+      sounds.bomb();
+      controller.vibrate(player.id, CONFIG.vibration.bomb);
     } else {
       renderer.puff(aim, now);
       sounds.miss();

@@ -128,6 +128,19 @@ export function createSounds({ volume }) {
       tone({ freq: notes[0], type: 'triangle', duration: 0.18, gain: 0.5, delay: 0.06 });
     },
 
+    /** Gold: a quick run up a sparkly scale, like a coin. */
+    gold() {
+      [NOTE.C6, NOTE.E6, NOTE.G6, NOTE.C6 * 2].forEach((freq, i) =>
+        tone({ freq, type: 'triangle', duration: 0.16, gain: 0.45, delay: i * 0.05 }),
+      );
+    },
+
+    /** Bomb: a deep boom (a long, low rumble of static plus a falling tone). */
+    bomb() {
+      noise({ duration: 0.6, gain: 0.8, cutoff: 500 });
+      tone({ freq: 140, endFreq: 35, type: 'sine', duration: 0.5, gain: 0.8 });
+    },
+
     /** A low, dull thud that drops in pitch. */
     miss() {
       tone({ freq: NOTE.E4, endFreq: 90, type: 'sine', duration: 0.14, gain: 0.5 });
@@ -174,6 +187,8 @@ function silentSounds() {
     onChange: nothing,
     shoot: nothing,
     hit: nothing,
+    gold: nothing,
+    bomb: nothing,
     miss: nothing,
     tick: nothing,
     go: nothing,

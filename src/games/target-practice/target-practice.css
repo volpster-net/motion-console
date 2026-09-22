@@ -102,6 +102,25 @@
   color: var(--ink);
 }
 
+/* Little swatches next to the gold and bomb rules on the title screen. */
+.tp-kind {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin: 0 2px -2px 6px;
+  border-radius: 50%;
+}
+
+.tp-kind-gold {
+  background: radial-gradient(circle, #fff4c2 0 30%, #f5b700 35%);
+  box-shadow: 0 0 0 2px #b98900;
+}
+
+.tp-kind-bomb {
+  background: #2b3440;
+  box-shadow: 0 0 0 2px #ff9a1f;
+}
+
 .tp-cta {
   display: flex;
   align-items: center;
@@ -145,7 +164,7 @@
 
 .tp-results {
   display: grid;
-  grid-template-columns: repeat(4, auto);
+  grid-template-columns: repeat(3, auto);
   gap: 8px 28px;
   margin: 8px 0 0;
 }

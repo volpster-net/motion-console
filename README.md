@@ -205,11 +205,16 @@ Title screen → 3-2-1 countdown → 60-second round → results → trigger to 
   three are on screen at once.
 - Outer ring 10, middle 25, bullseye 50. Five hits in a row doubles your points, ten triples
   them, and a miss resets the streak.
-- Targets shrink and vanish sooner as the round goes on.
+- **Gold** targets (about 1 in 8) are smaller and quicker but worth ×3, on top of the streak
+  multiplier. **Bombs** (about 1 in 10, after the first 5 seconds) cost 100 points and reset
+  your streak if you shoot them; letting one vanish is free. There's always at least one real
+  target on screen.
+- Targets shrink to about 40% of their starting size and vanish sooner as the round goes on.
 - Hits burst and float their points, and buzz the phone hard; misses puff and buzz lightly.
   Sounds are synthesized with the Web Audio API. Browsers only allow sound after a click on the
   console page, so there's a button for that.
-- Results show score, accuracy, best streak, and personal best (saved in the browser).
+- Results show score, accuracy, best streak, gold hit, bombs hit, and personal best (saved in
+  the browser).
 - Single-player for now: the lowest-numbered player plays.
 
 **Tuning the feel.** Every timing, size, and point value is in the `CONFIG` object at the top of

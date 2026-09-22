@@ -11,8 +11,11 @@
 /**
  * @typedef {typeof import('./index.js').CONFIG} Config
  *
+ * @typedef {'normal' | 'gold' | 'bomb'} TargetKind
+ *
  * @typedef {object} Target
  * @property {number} id
+ * @property {TargetKind} kind
  * @property {number} x
  * @property {number} y
  * @property {number} radius     Size of the outer ring, in screen heights.
@@ -25,8 +28,11 @@
  *
  * @typedef {{ name: string, upTo: number, points: number }} Ring
  *
- * @typedef {{ hit: false }
- *   | { hit: true, target: Target, ring: Ring, multiplier: number, points: number }} ShotResult
+ * @typedef {{ outcome: 'miss' }
+ *   | { outcome: 'hit', target: Target, ring: Ring, multiplier: number, points: number }
+ *   | { outcome: 'bomb', target: Target, points: number }} ShotResult
+ *   `multiplier` is everything the ring points were multiplied by (gold × streak).
+ *   For a bomb, `points` is negative: what it cost.
  */
 
 /** @param {number} value */
@@ -71,6 +77,28 @@ export function multiplierFor(streak, rules) {
   for (const rule of rules) if (streak >= rule.from) best = Math.max(best, rule.multiplier);
   return best;
 }
+
+/**
+ * Decides what kind a new target is, like a spinner: one random number
+ * between 0 and 1, where the first slice of the range means gold, the next
+ * slice means bomb, and the rest means a normal target. Each slice is as big
+ * as that kind's `chance`. Bombs sit out the start of the round.
+ *
+ * @param {number} roll        random number from 0 to 1
+ * @param {number} elapsedMs   time since the round started
+ * @param {Config} config
+ * @returns {TargetKind}
+ */
+export function chooseKind(roll, elapsedMs, config) {
+  const { gold, bomb } = config.specials;
+  if (roll < gold.chance) return 'gold';
+  if (roll < gold.chance + bomb.chance && elapsedMs >= bomb.notBeforeMs) return 'bomb';
+  return 'normal';
+}
+
+/** Size and lifetime multipliers for a kind; normal targets use 1. */
+const scalesFor = (kind, config) =>
+  kind === 'normal' ? { sizeScale: 1, lifetimeScale: 1 } : config.specials[kind];
 
 /**
  * Picks a random spot for a new target: fully on screen, below the top bar,
@@ -122,6 +150,8 @@ export function createRound({ config, startedAt, random = Math.random }) {
   let bestStreak = 0;
   let shots = 0;
   let hits = 0;
+  let goldHits = 0;
+  let bombsHit = 0;
 
   /** How far through the round we are: 0 at the start, 1 at the end. */
   const progressAt = (now) => clamp01((now - startedAt) / durationMs);
@@ -158,23 +188,32 @@ export function createRound({ config, startedAt, random = Math.random }) {
       const expired = targets.filter((target) => now >= target.expiresAt);
       if (expired.length > 0) {
         targets = targets.filter((target) => now < target.expiresAt);
-        if (config.targets.expiredBreaksStreak) streak = 0;
+        // Letting a bomb go is the right call, so only real targets can count against you.
+        const missedReal = expired.some((target) => target.kind !== 'bomb');
+        if (missedReal && config.targets.expiredBreaksStreak) streak = 0;
       }
 
-      // Keep at least one target up, and add another every so often, up to the maximum.
+      // Keep at least one target you can shoot up (bombs don't count), and add
+      // another every so often, up to the maximum.
       let spawned = null;
-      const due = targets.length === 0 || now >= nextSpawnAt;
+      const shootable = targets.filter((target) => target.kind !== 'bomb').length;
+      const due = shootable === 0 || now >= nextSpawnAt;
       if (!isOver(now) && due && targets.length < config.targets.maxOnScreen) {
         const progress = progressAt(now);
-        const radius = ramp(config.targets.radius, progress);
+        // A bomb can't be the only thing on screen.
+        let kind = chooseKind(random(), now - startedAt, config);
+        if (kind === 'bomb' && shootable === 0) kind = 'normal';
+        const { sizeScale, lifetimeScale } = scalesFor(kind, config);
+        const radius = ramp(config.targets.radius, progress) * sizeScale;
         const spot = findSpawnPosition({ radius, bounds, existing: targets, config, random });
         if (spot) {
           spawned = {
             id: nextId++,
+            kind,
             ...spot,
             radius,
             bornAt: now,
-            expiresAt: now + ramp(config.targets.lifetimeMs, progress),
+            expiresAt: now + ramp(config.targets.lifetimeMs, progress) * lifetimeScale,
           };
           targets = [...targets, spawned];
           nextSpawnAt = now + ramp(config.targets.spawnEveryMs, progress);
@@ -202,23 +241,46 @@ export function createRound({ config, startedAt, random = Math.random }) {
 
       if (!best) {
         streak = 0; // a miss breaks the streak
-        return { hit: false };
+        return { outcome: 'miss' };
       }
 
-      targets = targets.filter((target) => target !== best.target);
+      const { target, ring } = best;
+      targets = targets.filter((other) => other !== target);
+
+      if (target.kind === 'bomb') {
+        // Shooting a bomb costs points (never below zero) and breaks the streak.
+        // It counts as a shot but not a hit, so it lowers accuracy too.
+        const cost = Math.min(score, config.specials.bomb.penalty);
+        score -= cost;
+        streak = 0;
+        bombsHit += 1;
+        return { outcome: 'bomb', target, points: -cost };
+      }
+
       hits += 1;
       streak += 1;
       bestStreak = Math.max(bestStreak, streak);
+      if (target.kind === 'gold') goldHits += 1;
       // This hit already counts towards the streak, so the 5th hit in a row gets ×2.
-      const multiplier = multiplierFor(streak, config.streak);
-      const points = best.ring.points * multiplier;
+      // Gold multiplies on top of that.
+      const goldBonus = target.kind === 'gold' ? config.specials.gold.pointsMultiplier : 1;
+      const multiplier = multiplierFor(streak, config.streak) * goldBonus;
+      const points = ring.points * multiplier;
       score += points;
-      return { hit: true, target: best.target, ring: best.ring, multiplier, points };
+      return { outcome: 'hit', target, ring, multiplier, points };
     },
 
     /** Final numbers for the results screen. */
     results() {
-      return { score, shots, hits, accuracy: shots > 0 ? hits / shots : 0, bestStreak };
+      return {
+        score,
+        shots,
+        hits,
+        accuracy: shots > 0 ? hits / shots : 0,
+        bestStreak,
+        goldHits,
+        bombsHit,
+      };
     },
   };
 }

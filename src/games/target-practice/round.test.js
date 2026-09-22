@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from './index.js';
-import { createRound, findSpawnPosition, multiplierFor, ramp, ringAt } from './round.js';
+import {
+  chooseKind,
+  createRound,
+  findSpawnPosition,
+  multiplierFor,
+  ramp,
+  ringAt,
+} from './round.js';
 
 const BOUNDS = { aspect: 16 / 9, topReserved: 0.1 };
+/** The game's settings with gold and bombs switched off, for tests about normal targets. */
+const PLAIN = {
+  ...CONFIG,
+  specials: {
+    gold: { ...CONFIG.specials.gold, chance: 0 },
+    bomb: { ...CONFIG.specials.bomb, chance: 0 },
+  },
+};
 
 /** A predictable stand-in for Math.random: cycles through the given values. */
 function sequence(...values) {
@@ -12,7 +27,7 @@ function sequence(...values) {
 
 /** A round with one target already up, at a known spot. */
 function roundWithTarget() {
-  const round = createRound({ config: CONFIG, startedAt: 0, random: sequence(0.5) });
+  const round = createRound({ config: PLAIN, startedAt: 0, random: sequence(0.5) });
   round.update(0, BOUNDS);
   const [target] = round.targets;
   return { round, target };
@@ -75,7 +90,7 @@ describe('findSpawnPosition', () => {
 
 describe('createRound', () => {
   it('puts a target up straight away and adds more over time, up to the maximum', () => {
-    const round = createRound({ config: CONFIG, startedAt: 0 });
+    const round = createRound({ config: PLAIN, startedAt: 0 });
     round.update(0, BOUNDS);
     expect(round.targets).toHaveLength(1);
     round.update(CONFIG.targets.spawnEveryMs.start - 1, BOUNDS);
@@ -87,7 +102,7 @@ describe('createRound', () => {
   });
 
   it('makes targets smaller and shorter-lived as the round goes on', () => {
-    const round = createRound({ config: CONFIG, startedAt: 0 });
+    const round = createRound({ config: PLAIN, startedAt: 0 });
     round.update(0, BOUNDS);
     const early = round.targets[0];
     const late = CONFIG.round.durationMs - 1;
@@ -107,13 +122,13 @@ describe('createRound', () => {
   it('scores by ring', () => {
     const { round, target } = roundWithTarget();
     const shot = round.shoot({ x: target.x, y: target.y });
-    expect(shot).toMatchObject({ hit: true, points: 50, multiplier: 1 });
+    expect(shot).toMatchObject({ outcome: 'hit', points: 50, multiplier: 1 });
     expect(round.score).toBe(50);
     expect(round.targets).toHaveLength(0);
   });
 
   it('builds a streak multiplier and resets it on a miss', () => {
-    const round = createRound({ config: CONFIG, startedAt: 0 });
+    const round = createRound({ config: PLAIN, startedAt: 0 });
     const hitNext = (t) => {
       round.update(t, BOUNDS);
       const target = round.targets[0];
@@ -125,7 +140,7 @@ describe('createRound', () => {
     expect(points).toEqual([10, 10, 10, 10, 20, 20, 20, 20, 20, 30]);
     expect(round.multiplier).toBe(3);
 
-    expect(round.shoot({ x: 5, y: 5 })).toEqual({ hit: false });
+    expect(round.shoot({ x: 5, y: 5 })).toEqual({ outcome: 'miss' });
     expect(round.streak).toBe(0);
     expect(round.multiplier).toBe(1);
     expect(round.results()).toMatchObject({ hits: 10, shots: 11, bestStreak: 10 });
@@ -141,7 +156,7 @@ describe('createRound', () => {
   });
 
   it('ends after the round duration and stops adding targets', () => {
-    const round = createRound({ config: CONFIG, startedAt: 1000 });
+    const round = createRound({ config: PLAIN, startedAt: 1000 });
     const end = 1000 + CONFIG.round.durationMs;
     expect(round.isOver(end - 1)).toBe(false);
     expect(round.isOver(end)).toBe(true);
@@ -151,7 +166,107 @@ describe('createRound', () => {
   });
 
   it('reports 0% accuracy when no shots were fired', () => {
-    const round = createRound({ config: CONFIG, startedAt: 0 });
+    const round = createRound({ config: PLAIN, startedAt: 0 });
     expect(round.results().accuracy).toBe(0);
+  });
+});
+
+describe('chooseKind', () => {
+  const { gold, bomb } = CONFIG.specials;
+  const later = bomb.notBeforeMs;
+
+  it('splits one random roll into gold, bomb, or normal', () => {
+    expect(chooseKind(0, later, CONFIG)).toBe('gold');
+    expect(chooseKind(gold.chance - 0.001, later, CONFIG)).toBe('gold');
+    expect(chooseKind(gold.chance, later, CONFIG)).toBe('bomb');
+    expect(chooseKind(gold.chance + bomb.chance - 0.001, later, CONFIG)).toBe('bomb');
+    expect(chooseKind(gold.chance + bomb.chance, later, CONFIG)).toBe('normal');
+  });
+
+  it('holds bombs back at the start of the round', () => {
+    expect(chooseKind(gold.chance, later - 1, CONFIG)).toBe('normal');
+  });
+});
+
+describe('special targets', () => {
+  const { gold, bomb } = CONFIG.specials;
+  const GOLD_ROLL = 0;
+  const BOMB_ROLL = gold.chance;
+  const NORMAL_ROLL = 0.99;
+
+  /**
+   * A stand-in for Math.random for a round. Each new target asks for three
+   * numbers: its kind roll, then x, then y. Targets get the kind rolls in
+   * order (the last one repeats) and are placed at left, right, then middle,
+   * so they never overlap.
+   */
+  function scripted(...kindRolls) {
+    const xs = [0.1, 0.9, 0.5];
+    let call = 0;
+    let spawn = 0;
+    return () => {
+      const step = call++ % 3;
+      if (step === 0) return kindRolls[Math.min(spawn, kindRolls.length - 1)];
+      if (step === 1) return xs[spawn % xs.length];
+      spawn += 1;
+      return 0.5;
+    };
+  }
+  const roundAt = (startedAt, ...kindRolls) =>
+    createRound({ config: CONFIG, startedAt, random: scripted(...kindRolls) });
+
+  it('makes gold smaller, shorter-lived, and worth more', () => {
+    const round = roundAt(0, GOLD_ROLL);
+    round.update(0, BOUNDS);
+    const [target] = round.targets;
+    expect(target.kind).toBe('gold');
+    expect(target.radius).toBeCloseTo(CONFIG.targets.radius.start * gold.sizeScale);
+    expect(target.expiresAt).toBeCloseTo(CONFIG.targets.lifetimeMs.start * gold.lifetimeScale);
+    const shot = round.shoot({ x: target.x, y: target.y });
+    expect(shot).toMatchObject({ outcome: 'hit', points: 50 * gold.pointsMultiplier });
+    expect(round.results().goldHits).toBe(1);
+  });
+
+  it('never makes a bomb the only target on screen', () => {
+    const round = roundAt(-bomb.notBeforeMs, BOMB_ROLL);
+    round.update(0, BOUNDS);
+    expect(round.targets.map((t) => t.kind)).toEqual(['normal']);
+  });
+
+  it('costs points and the streak when you shoot a bomb, but never goes below zero', () => {
+    const round = roundAt(-bomb.notBeforeMs, NORMAL_ROLL, NORMAL_ROLL, BOMB_ROLL);
+    round.update(0, BOUNDS);
+    const [first] = round.targets;
+    round.shoot({ x: first.x, y: first.y }); // bullseye: +50, streak 1
+    round.update(0, BOUNDS); // the screen was empty, so a normal target appears
+    round.update(CONFIG.targets.spawnEveryMs.start, BOUNDS); // then a bomb
+    const bombTarget = round.targets.find((t) => t.kind === 'bomb');
+    expect(bombTarget).toBeDefined();
+
+    const shot = round.shoot({ x: bombTarget.x, y: bombTarget.y });
+    // The penalty is 100, but only 50 points were left to lose.
+    expect(shot).toEqual({ outcome: 'bomb', target: bombTarget, points: -50 });
+    expect(round.score).toBe(0);
+    expect(round.streak).toBe(0);
+    expect(round.results()).toMatchObject({ bombsHit: 1, hits: 1, shots: 2 });
+  });
+
+  it("doesn't count a bomb expiring as a missed target", () => {
+    const config = { ...CONFIG, targets: { ...CONFIG.targets, expiredBreaksStreak: true } };
+    const round = createRound({
+      config,
+      startedAt: -bomb.notBeforeMs,
+      random: scripted(NORMAL_ROLL, NORMAL_ROLL, BOMB_ROLL),
+    });
+    round.update(0, BOUNDS);
+    const [first] = round.targets;
+    round.shoot({ x: first.x, y: first.y });
+    round.update(0, BOUNDS);
+    round.update(CONFIG.targets.spawnEveryMs.start, BOUNDS);
+    const bombTarget = round.targets.find((t) => t.kind === 'bomb');
+    const second = round.targets.find((t) => t.kind !== 'bomb');
+    round.shoot({ x: second.x, y: second.y });
+    round.update(bombTarget.expiresAt, BOUNDS); // only the bomb was left, and it expires
+    expect(round.streak).toBe(2);
   });
 });
