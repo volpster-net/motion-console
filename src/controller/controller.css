@@ -83,6 +83,22 @@ body.controller {
   gap: 12px;
 }
 
+/* The status shares the header with the Home button, so it shortens with "…" rather than wrapping. */
+.pad-header .status {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pad-header .status::before {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
 .player-badge {
   padding: 4px 14px;
   border-radius: 999px;
@@ -146,6 +162,32 @@ body.controller {
   transition:
     transform 60ms,
     box-shadow 60ms;
+}
+
+.btn-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 15px;
+  box-shadow: 0 3px 0 var(--line);
+}
+
+.btn-home svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.btn-home.is-down {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--line);
 }
 
 .btn-recenter {

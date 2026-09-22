@@ -11,9 +11,10 @@ gyroscope becomes a pointer, with buttons.
   <img src="docs/controller.png" alt="Controller page on a phone with a sensor readout, Re-center button and a large Fire button" width="150" />
 </p>
 
-**Status: Milestone 3.** The first game, **Target Practice**, is playable: aim with your phone,
-pull the trigger to hit rings before they vanish, and chase your personal best. It loads straight
-after pairing; a launcher menu comes next.
+**Status: Milestone 4.** After pairing, the console shows a **launcher menu**: point at a game and
+pull the trigger to play, and press **Home** on your phone to come back. The first game, **Target
+Practice**, has you hit rings before they vanish and chase your personal best. New games plug into
+the menu by adding a folder.
 
 ## How it works
 
@@ -81,15 +82,15 @@ Every message is one envelope:
 }
 ```
 
-| `ch`           | `type`    | Direction                | `d`                                                |
-| -------------- | --------- | ------------------------ | -------------------------------------------------- |
-| `sys`          | `hello`   | controller → console     | `{}`                                               |
-| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`                   |
-| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)                  |
-| `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, gx, gy, gz, t }`: see below |
-| `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter', down: boolean }`      |
-| `output`       | `vibrate` | console → one controller | `{ pattern }`, as for `navigator.vibrate()`, ≤ 1 s |
-| `<channel id>` | anything  | either way               | defined by that channel                            |
+| `ch`           | `type`    | Direction                | `d`                                                     |
+| -------------- | --------- | ------------------------ | ------------------------------------------------------- |
+| `sys`          | `hello`   | controller → console     | `{}`                                                    |
+| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`                        |
+| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)                       |
+| `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, gx, gy, gz, t }`: see below      |
+| `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter' \| 'home', down: boolean }` |
+| `output`       | `vibrate` | console → one controller | `{ pattern }`, as for `navigator.vibrate()`, ≤ 1 s      |
+| `<channel id>` | anything  | either way               | defined by that channel                                 |
 
 `alpha`, `beta`, and `gamma` are the phone's raw rotation rate in degrees per second
 ([`DeviceMotionEvent.rotationRate`](https://developer.mozilla.org/docs/Web/API/DeviceMotionEvent/rotationRate)).
@@ -171,31 +172,55 @@ into its own chunk. No file in `core/` or `console/` changes. Subscriptions made
 are removed automatically when the channel stops. [`src/channels/aim`](src/channels/aim/index.js)
 is a complete working example.
 
-Until there's a menu, open a specific channel with `?channel=<id>` on the console URL:
-`?channel=aim` for the aiming sandbox, or `?channel=monitor` for the raw Input Monitor.
+The console runs the **launcher** channel by default. Developer tools are still channels you can
+open with `?channel=<id>` on the console URL: `?channel=aim` for the aiming sandbox, or
+`?channel=monitor` for the raw Input Monitor.
 
 ## Games
 
-A game is a folder in `src/games/` whose `index.js` default-exports one object
-([`src/games/game.js`](src/games/game.js) has the full contract):
+A game is a folder in `src/games/` with two files. Add the folder and the game appears in the
+launcher menu; nothing else changes. [`src/games/game.js`](src/games/game.js) has the full contract.
 
-```js
-export default {
-  id: 'target-practice',
-  name: 'Target Practice',
-  description: 'Aim with your phone and hit the rings before they vanish.',
-  start(container, controller) {
-    /* draw into container; listen with controller.onInput(...); buzz with controller.vibrate(...) */
-  },
-  stop() {
-    /* undo everything: loops, listeners, sounds, elements */
-  },
-};
-```
+- **`meta.js`**: what the menu shows. It's tiny, so the menu loads every game's `meta.js` up front.
 
-`controller` is the same API channels get, plus `vibrate(playerId, pattern)` to buzz one phone.
-Until the launcher exists, `gameAsChannel(game)` wraps a game as a channel, which is how Target
-Practice is the default screen.
+  ```js
+  export default {
+    id: 'target-practice', // must match the folder name
+    name: 'Target Practice',
+    description: 'Aim with your phone and hit the rings before they vanish.',
+    art: '<svg …>…</svg>', // optional tile picture
+  };
+  ```
+
+- **`index.js`**: the game itself, downloaded only when someone picks it.
+
+  ```js
+  export default {
+    ...meta,
+    start(container, controller) {
+      /* draw into container; listen with controller.onInput(...); buzz with controller.vibrate(...) */
+    },
+    stop() {
+      /* undo everything: loops, timers, listeners, sounds, elements */
+    },
+  };
+  ```
+
+`controller` lets a game see the players (`players.list()`, `players.onChange()`), hear their phones
+(`onInput(INPUT.MOTION | INPUT.BUTTON, …)`), and buzz them (`vibrate(playerId, pattern)`). Use the
+shared aim tracker in `src/aim/` for anything that points.
+
+### The launcher
+
+- One tile per game, plus a "More games" placeholder. Every player's crosshair shows on the
+  menu, and a tile lights up in the colour of whoever points at it. Fire starts it. You can also
+  click a tile on the console, which is handy without a phone.
+- **Home** on any phone, or **Esc** on the console, stops the game and returns to the menu.
+- Each game gets its own copy of `controller`; when it stops, the launcher removes any
+  subscriptions the game forgot. Timers and window listeners are still the game's job in `stop()`.
+- The running game is kept in the address bar (`?game=target-practice`), so reloading the console
+  goes straight back into it, and a link can open a game directly.
+- Press <kbd>D</kbd> on the menu for the aim tuning panel.
 
 ### Target Practice
 
@@ -250,8 +275,10 @@ src/
     aim-settings.js         sensitivity/deadzone/smoothing defaults and saving
     debug-panel.js          hidden tuning panel (press D)
   games/
-    game.js                 the start/stop contract, and gameAsChannel()
+    game.js                 the game contract (meta + start/stop)
+    index.js                game discovery: listGames(), loadGame()
     target-practice/        Milestone 3: the first game
+      meta.js               name, description, and tile art for the menu
       index.js              CONFIG, screens, and the game loop
       round.js              rules: spawning, difficulty, scoring (pure, tested)
       render.js             canvas drawing: targets, effects, crosshair
@@ -259,7 +286,10 @@ src/
       personal-best.js      best score in localStorage
   channels/
     index.js                channel discovery and loading
-    target-practice/        runs the game (the default channel)
+    launcher/               Milestone 4: the home menu (the default channel)
+      index.js              menu ↔ loading ↔ playing, Home and Esc, ?game=
+      menu.js               tiles, crosshairs, and picking
+      scoped-controller.js  per-game controller that cleans up after the game (tested)
     aim/                    Milestone 2: aiming sandbox (?channel=aim)
     monitor/                raw input monitor (?channel=monitor)
   ui/                       shared styles and DOM helpers
@@ -340,6 +370,5 @@ Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, defau
   crosshair and the phone can disagree about where "centre" is. The deadzone slows this down, and
   Re-center fixes it.
 - **Console reload reassigns slots.** Controllers reconnect automatically but may swap slot numbers.
-- Next milestones: a launcher menu using the games' start/stop contract, multiplayer Target
-  Practice, and controller-side game UIs (`sys/channel` already tells phones which channel is
-  active).
+- Next milestones: more games, multiplayer Target Practice, and controller-side game UIs
+  (`sys/channel` already tells phones which channel is active).

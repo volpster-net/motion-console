@@ -14,6 +14,7 @@ import './target-practice.css';
 import { createAimTracker, loadAimSettings } from '../../aim/index.js';
 import { playerColor, playerLabel } from '../../core/players.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
+import meta from './meta.js';
 import { loadPersonalBest, savePersonalBest } from './personal-best.js';
 import { createRenderer, KIND_COLORS } from './render.js';
 import { createRound } from './round.js';
@@ -121,9 +122,9 @@ export const CONFIG = {
   },
 };
 
-export const id = 'target-practice';
-export const name = 'Target Practice';
-export const description = 'Aim with your phone and hit the rings before they vanish.';
+// The name and description live in meta.js, so the launcher can show them
+// without loading the game.
+export const { id, name, description } = meta;
 
 /** The running game, if any. Only one can run at a time. */
 let session = null;

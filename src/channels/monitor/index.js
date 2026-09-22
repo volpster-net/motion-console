@@ -20,7 +20,11 @@ const LOG_LIMIT = 12;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const BUTTON_LABELS = { [BUTTONS.FIRE]: 'Fire', [BUTTONS.RECENTER]: 'Re-center' };
+const BUTTON_LABELS = {
+  [BUTTONS.FIRE]: 'Fire',
+  [BUTTONS.RECENTER]: 'Re-center',
+  [BUTTONS.HOME]: 'Home',
+};
 
 /** @param {import('../../console/players.js').Player} player */
 function createCard(player) {

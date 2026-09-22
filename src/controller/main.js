@@ -174,6 +174,7 @@ function runSession(room, sensor) {
   // The console does the aiming; the phone only reports presses and buzzes.
   bindButton($('#fire-btn'), BUTTONS.FIRE, room, { key: ' ', onDown: () => vibrate(30) });
   bindButton($('#recenter-btn'), BUTTONS.RECENTER, room, { key: 'r', onDown: () => vibrate(25) });
+  bindButton($('#home-btn'), BUTTONS.HOME, room, { key: 'h', onDown: () => vibrate(25) });
 }
 
 /**
