@@ -112,7 +112,7 @@ doing its own maths. The code comments explain each step in plain language.
    don't make the crosshair creep.
 3. **Integrate.** Speed × time = distance: each sample moves the crosshair by
    `rate × (time since the previous sample) × sensitivity`, using the phone's timestamps.
-   At sensitivity 1, a 30° turn crosses one screen height.
+   At sensitivity 1, a 30° turn crosses one screen height; at the default 1.8×, about 17° does.
 4. **Clamp.** The crosshair stops at the edges and comes back as soon as you turn back.
 5. **Smooth.** The drawn crosshair glides towards the true position each frame, which hides jitter.
    The formula is frame-rate independent, so it feels the same at 60 Hz and 120 Hz.

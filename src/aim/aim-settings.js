@@ -14,9 +14,10 @@
 
 /** @type {Readonly<AimSettings>} */
 export const DEFAULT_AIM_SETTINGS = Object.freeze({
-  sensitivity: 1,
-  deadzone: 2,
-  smoothing: 40,
+  // Tuned by hand on an Android phone aimed at a laptop screen.
+  sensitivity: 1.8,
+  deadzone: 0.5,
+  smoothing: 50,
   axisOrder: 'xyz',
 });
 
