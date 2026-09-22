@@ -5,14 +5,14 @@ import { playerColor, playerLabel } from '../core/players.js';
 import { BUTTONS, INPUT, NS, SYS } from '../core/protocol.js';
 import { joinRoom } from '../core/transport.js';
 import { renderFatal } from '../ui/fatal.js';
-import { formatDegrees } from '../ui/format.js';
+import { formatSigned } from '../ui/format.js';
 import { enterFullscreen, keepScreenAwake, vibrate } from './device.js';
-import { createOrientationSensor } from './orientation.js';
-import { startOrientationStream } from './orientation-stream.js';
+import { createMotionSensor } from './motion.js';
+import { startMotionStream } from './motion-stream.js';
 
 // Per-tab, so a reload rejoins as the same player and keeps its slot.
 const PLAYER_ID_STORAGE_KEY = 'motion-console.player-id';
-const DEFAULT_SEND_HZ = 30;
+const DEFAULT_SEND_HZ = 60;
 const MIN_SEND_HZ = 10;
 const MAX_SEND_HZ = 60;
 const SENSOR_GRACE_MS = 1500;
@@ -90,7 +90,7 @@ function showStart(code) {
     'click',
     () => {
       // Everything that needs a user gesture runs synchronously, before any await.
-      const sensor = createOrientationSensor();
+      const sensor = createMotionSensor();
       const permission = sensor.start();
       enterFullscreen();
       keepScreenAwake();
@@ -102,7 +102,7 @@ function showStart(code) {
 
 /**
  * @param {string} code
- * @param {ReturnType<typeof createOrientationSensor>} sensor
+ * @param {ReturnType<typeof createMotionSensor>} sensor
  * @param {Promise<string>} permission
  */
 async function connect(code, sensor, permission) {
@@ -125,7 +125,7 @@ async function connect(code, sensor, permission) {
 
 /**
  * @param {import('../core/transport.js').Room} room
- * @param {ReturnType<typeof createOrientationSensor>} sensor
+ * @param {ReturnType<typeof createMotionSensor>} sensor
  */
 function runSession(room, sensor) {
   // Track console sessions, not ids: a reloaded console keeps its id but gets a new session.
@@ -165,15 +165,10 @@ function runSession(room, sensor) {
   setStatus('waiting', 'Waiting for console…');
   sayHello();
 
-  startOrientationStream({ read: sensor.read, send: room.send, hz: getSendHz() });
-  bindButton($('#fire-btn'), BUTTONS.FIRE, room, { key: ' ', onDown: () => vibrate(15) });
-  bindButton($('#recenter-btn'), BUTTONS.RECENTER, room, {
-    key: 'r',
-    onDown: () => {
-      sensor.recenter();
-      vibrate(25);
-    },
-  });
+  startMotionStream({ onSample: sensor.onSample, send: room.send, hz: getSendHz() });
+  // The console does the aiming; the phone only reports presses and buzzes.
+  bindButton($('#fire-btn'), BUTTONS.FIRE, room, { key: ' ', onDown: () => vibrate(30) });
+  bindButton($('#recenter-btn'), BUTTONS.RECENTER, room, { key: 'r', onDown: () => vibrate(25) });
 }
 
 /**
@@ -213,14 +208,14 @@ function bindButton(el, id, room, { key, onDown }) {
   window.addEventListener('blur', () => set(false));
 }
 
-/** Local readout, updated once per frame. */
+/** Local readout of the raw rotation rate, updated once per frame. */
 function startReadout(sensor) {
-  const outputs = { yaw: $('#yaw'), pitch: $('#pitch'), roll: $('#roll') };
+  const outputs = { alpha: $('#alpha'), beta: $('#beta'), gamma: $('#gamma') };
   requestAnimationFrame(function frame() {
-    const orientation = sensor.read();
-    if (orientation) {
+    const sample = sensor.read();
+    if (sample) {
       for (const [axis, el] of Object.entries(outputs)) {
-        el.textContent = formatDegrees(orientation[axis]);
+        el.textContent = formatSigned(sample[axis]);
       }
     }
     requestAnimationFrame(frame);

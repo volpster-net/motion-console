@@ -2,25 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { createEnvelope, parseEnvelope, PROTOCOL_VERSION } from './protocol.js';
 
 describe('protocol envelopes', () => {
-  const base = { ch: 'input', type: 'orient', from: 'p_abc', seq: 7, data: { yaw: 1 } };
+  const base = { ch: 'input', type: 'motion', from: 'p_abc', seq: 7, data: { alpha: 1 } };
 
   it('round-trips a broadcast envelope', () => {
     const envelope = createEnvelope(base);
     expect(envelope).toEqual({
       v: PROTOCOL_VERSION,
       ch: 'input',
-      type: 'orient',
+      type: 'motion',
       from: 'p_abc',
       seq: 7,
-      d: { yaw: 1 },
+      d: { alpha: 1 },
     });
     expect(parseEnvelope(envelope)).toEqual({
       ch: 'input',
-      type: 'orient',
+      type: 'motion',
       from: 'p_abc',
       to: null,
       seq: 7,
-      d: { yaw: 1 },
+      d: { alpha: 1 },
     });
   });
 

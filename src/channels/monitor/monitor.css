@@ -44,7 +44,7 @@
   color: var(--muted);
 }
 
-/* Pointer preview: where yaw/pitch would aim on a screen. */
+/* Aim preview, driven by the shared aim tracker. */
 .aim {
   position: relative;
   aspect-ratio: 16 / 9;
@@ -76,7 +76,7 @@
 
 .axis {
   display: grid;
-  grid-template-columns: 44px 1fr 64px;
+  grid-template-columns: 24px 1fr 64px;
   align-items: center;
   gap: 10px;
 }

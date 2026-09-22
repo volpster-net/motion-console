@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import '../ui/base.css';
 import './console.css';
-import { DEFAULT_CHANNEL } from '../channels/index.js';
+import { DEFAULT_CHANNEL, listChannelIds } from '../channels/index.js';
 import { createClientId, generateRoomCode, normalizeRoomCode } from '../core/ids.js';
 import { playerColor, playerLabel } from '../core/players.js';
 import { NS, SYS } from '../core/protocol.js';
@@ -134,7 +134,13 @@ async function main() {
   });
   room.on('leave', (id) => players.remove(id));
 
-  await host.start(DEFAULT_CHANNEL);
+  await host.start(requestedChannel() ?? DEFAULT_CHANNEL);
+}
+
+/** Lets `?channel=monitor` pick a channel until there's a menu to choose from. */
+function requestedChannel() {
+  const id = new URLSearchParams(location.search).get('channel');
+  return id && listChannelIds().includes(id) ? id : null;
 }
 
 main().catch((err) => {

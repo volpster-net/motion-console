@@ -9,7 +9,7 @@ import { RESERVED_NAMESPACES } from '../core/protocol.js';
 
 const modules = import.meta.glob('./*/index.js');
 
-export const DEFAULT_CHANNEL = 'monitor';
+export const DEFAULT_CHANNEL = 'aim';
 
 export function listChannelIds() {
   return Object.keys(modules).map((path) => path.split('/')[1]);

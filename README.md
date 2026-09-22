@@ -7,19 +7,19 @@ gyroscope becomes a pointer, with buttons.
 **Live demo: [motion.volpster.net](https://motion.volpster.net)**. Open it on a laptop or TV, then scan the QR code with your phone.
 
 <p>
-  <img src="docs/console.png" alt="Console page showing the room QR code, the connected players, and live orientation data" width="640" />
-  <img src="docs/controller.png" alt="Controller page on a phone with orientation readout, Re-center button and a large Fire button" width="150" />
+  <img src="docs/console.png" alt="Console page showing the room QR code, the connected players, and live input data" width="640" />
+  <img src="docs/controller.png" alt="Controller page on a phone with a sensor readout, Re-center button and a large Fire button" width="150" />
 </p>
 
-**Status: Milestone 1.** Pairing, live orientation, and buttons work end to end. Games come next.
+**Status: Milestone 2.** Pairing, buttons, and crosshair aiming work end to end. Point the phone at
+the screen and a crosshair follows it. Games come next.
 
 ## How it works
 
 ```mermaid
 flowchart LR
   subgraph Phone["Phone · /controller/"]
-    S[deviceorientation] --> R[sensor + re-center]
-    R -->|sampled at 30 Hz| T1[transport]
+    S[devicemotion rotation rate] -->|up to 60 Hz| T1[transport]
     B[Fire / Re-center] --> T1
   end
   subgraph Supabase["Supabase Realtime · room:ABCD"]
@@ -28,8 +28,10 @@ flowchart LR
   end
   subgraph Console["Console · /"]
     T2[transport] --> H[channel host]
-    H --> C1[monitor channel]
+    H --> C1[aim channel]
+    C1 --> A[aim tracker]
     H -.-> C2[future games…]
+    C2 -.-> A
   end
   T1 <--> BC <--> T2
   T1 <--> PR <--> T2
@@ -40,23 +42,27 @@ flowchart LR
    It also checks, through presence, that no other console already owns that code.
 2. The phone joins the same channel and sends `sys/hello`. The console replies with `sys/welcome`
    and a player slot (P1–P4).
-3. The phone samples its orientation at a fixed rate, sending only when the pose changes plus a
-   1 s keepalive. It also sends a press and a release event for each button.
+3. The phone forwards its gyroscope's raw rotation rate (how fast it's turning, in degrees per
+   second) up to 60 times a second, each reading stamped with the phone's clock. It also sends a
+   press and a release event for each button. The phone does no maths.
 4. The console routes each message to the active **channel**: a pluggable screen such as a game,
-   a menu, or the Milestone 1 Input Monitor.
+   a menu, or the Milestone 2 Aim screen. Channels turn motion into a crosshair with the shared
+   **aim tracker** (below).
 
 ### Design decisions
 
-| Decision                                             | Why                                                                                                                                                                                                                                                                                                                           |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Vanilla JS + Vite, no framework**                  | The app is two small pages plus a hot input loop, and future games will draw to canvas. A reactive framework would sit between sensor events and pixels and add weight to the phone page without paying for itself. Vite provides ES modules, HMR, env vars, a multi-page build, and `import.meta.glob` for plugin discovery. |
-| **One broadcast event, routing in our code**         | Every message is the same envelope on a single Supabase event. The core routes by namespace (`ch`), so Supabase never needs to know which games exist.                                                                                                                                                                        |
-| **Transport behind one module**                      | `src/core/transport.js` is the only file that imports Supabase. Swapping to WebRTC data channels for lower latency would change one file.                                                                                                                                                                                     |
-| **Fixed-rate sampling, not per-event sending**       | Phones fire `deviceorientation` at different rates. Sampling at a fixed rate caps bandwidth, which keeps the app inside Supabase's messages-per-second quota and makes rates predictable for games.                                                                                                                           |
-| **Presence for membership, messages for handshakes** | Presence answers "who is here?" and catches silent disconnects. The hello/welcome exchange answers "which slot am I?" A controller re-sends hello whenever a console (re)appears, so reloading either side recovers on its own.                                                                                               |
-| **Re-centering on the phone**                        | Games receive angles already relative to the player's chosen centre, so no game has to reimplement calibration.                                                                                                                                                                                                               |
-| **DOM updates once per frame**                       | Messages only update state. `requestAnimationFrame` writes to the DOM, so 60 messages a second never cause 60 layouts.                                                                                                                                                                                                        |
-| **`core/` has no DOM**                               | The protocol, IDs, emitter, and orientation math are pure and unit-tested.                                                                                                                                                                                                                                                    |
+| Decision                                     | Why                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Vanilla JS + Vite, no framework**          | The app is two small pages plus a hot input loop, and future games will draw to canvas. A reactive framework would sit between sensor events and pixels and add weight to the phone page without paying for itself. Vite provides ES modules, HMR, env vars, a multi-page build, and `import.meta.glob` for plugin discovery. |
+| **One broadcast event, routing in our code** | Every message is the same envelope on a single Supabase event. The core routes by namespace (`ch`), so Supabase never needs to know which games exist.                                                                                                                                                                        |
+| **Transport behind one module**              | `src/core/transport.js` is the only file that imports Supabase. Swapping to WebRTC data channels for lower latency would change one file.                                                                                                                                                                                     |
+| **A dumb phone, a smart console**            | The phone sends raw sensor data and button presses, nothing else. All aiming maths, tuning, and calibration live on the console, so they can change (or differ per game) without touching the phone page.                                                                                                                     |
+| **Rotation rate, not orientation angles**    | Rotation rate comes straight from the gyroscope, so it responds instantly and games can apply their own deadzone and smoothing. It has to be added up over time (integrated), which the aim tracker does.                                                                                                                     |
+| **Integrate by the phone's timestamps**      | Messages cross the internet in uneven bursts. Each sample carries the time the phone measured it, and the console replays samples by those times, so network jitter doesn't change crosshair speed.                                                                                                                           |
+| **Rate-capped sending**                      | Phones fire `devicemotion` at 50–200+ Hz. Capping at 60 Hz keeps bandwidth and Supabase's message quota predictable; the timestamps mean skipped readings don't distort aiming.                                                                                                                                               |
+| **Re-centering on the console**              | Re-center snaps the crosshair to the middle in the aim tracker. The phone just reports the button, so every game gets the same behaviour for free.                                                                                                                                                                            |
+| **DOM updates once per frame**               | Messages only update state. `requestAnimationFrame` writes to the DOM, so 60 messages a second never cause 60 layouts.                                                                                                                                                                                                        |
+| **`core/` has no DOM**                       | The protocol, IDs, and emitter are pure and unit-tested. So is the aiming maths in `src/aim/`.                                                                                                                                                                                                                                |
 
 ## Message protocol
 
@@ -64,9 +70,9 @@ Every message is one envelope:
 
 ```js
 {
-  v: 1,              // protocol version; other versions are dropped
+  v: 2,              // protocol version; other versions are dropped
   ch: 'input',       // namespace: 'sys' | 'input' | <channel id>
-  type: 'orient',    // message type within the namespace
+  type: 'motion',    // message type within the namespace
   from: 'p_k3j9x2qa',// sender id
   to: 'console_…',   // optional: unicast. Omitted = everyone in the room
   seq: 1042,         // per-sender counter, used to count lost messages
@@ -74,24 +80,51 @@ Every message is one envelope:
 }
 ```
 
-| `ch`           | `type`    | Direction                | `d`                                               |
-| -------------- | --------- | ------------------------ | ------------------------------------------------- |
-| `sys`          | `hello`   | controller → console     | `{}`                                              |
-| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`                  |
-| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)                 |
-| `input`        | `orient`  | controller → console     | `{ yaw, pitch, roll }` in degrees, 0.1° precision |
-| `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter', down: boolean }`     |
-| `<channel id>` | anything  | either way               | defined by that channel                           |
+| `ch`           | `type`    | Direction                | `d`                                           |
+| -------------- | --------- | ------------------------ | --------------------------------------------- |
+| `sys`          | `hello`   | controller → console     | `{}`                                          |
+| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`              |
+| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)             |
+| `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, t }`: see below        |
+| `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter', down: boolean }` |
+| `<channel id>` | anything  | either way               | defined by that channel                       |
 
-Orientation is relative to the last re-center. Positive **yaw** points right, positive **pitch**
-points up, and positive **roll** tilts right. `sys` and `input` are reserved. Any other `ch` value
+`alpha`, `beta`, and `gamma` are the phone's raw rotation rate in degrees per second, around the
+axis out of the screen, the left-to-right axis, and the bottom-to-top axis
+([`DeviceMotionEvent.rotationRate`](https://developer.mozilla.org/docs/Web/API/DeviceMotionEvent/rotationRate)).
+`t` is when the phone measured them, in milliseconds on the phone's own clock; only the gaps
+between samples matter. `sys` and `input` are reserved. Any other `ch` value
 belongs to the channel with that id, which isolates games from the core and from each other.
+
+## Aiming
+
+`src/aim/` turns a phone's spin into a crosshair position. Every game should use it rather than
+doing its own maths. The code comments explain each step in plain language.
+
+1. **Pick the aiming axes.** With the phone held like a TV remote (screen up, top edge pointing at
+   the TV), turning left/right is `alpha` and tipping up/down is `beta`. Rolling (`gamma`) is ignored.
+2. **Deadzone.** Turning slower than a threshold counts as still, so sensor noise and shaky hands
+   don't make the crosshair creep.
+3. **Integrate.** Speed × time = distance: each sample moves the crosshair by
+   `rate × (time since the previous sample) × sensitivity`, using the phone's timestamps.
+   At sensitivity 1, a 30° turn crosses one screen height.
+4. **Clamp.** The crosshair stops at the edges and comes back as soon as you turn back.
+5. **Smooth.** The drawn crosshair glides towards the true position each frame, which hides jitter.
+   The formula is frame-rate independent, so it feels the same at 60 Hz and 120 Hz.
+
+Positions are in _screen heights_ from the centre, so the same wrist movement feels the same on a
+laptop and a TV. `toPixels()` converts them for drawing.
+
+**Tuning.** Press <kbd>D</kbd> on the console to open a panel with sliders for sensitivity,
+deadzone, and smoothing, plus each controller's live raw values. Settings apply instantly and are
+saved in that browser.
 
 ## Writing a channel
 
 A channel is a folder. Create `src/channels/<id>/index.js`:
 
 ```js
+import { createAimTracker, loadAimSettings, toPixels } from '../../aim/index.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
 
 /** @type {import('../../console/channel-host.js').Channel} */
@@ -100,25 +133,34 @@ export default {
 
   mount(root, api) {
     root.innerHTML = '<canvas></canvas>';
+    const tracker = createAimTracker(loadAimSettings());
 
-    api.onInput(INPUT.ORIENT, ({ yaw, pitch }, { player }) => {
-      /* aim player.slot's cursor */
-    });
+    api.onInput(INPUT.MOTION, (sample, { player }) => tracker.push(player.id, sample));
     api.onInput(INPUT.BUTTON, ({ id, down }, { player }) => {
-      if (id === BUTTONS.FIRE && down) api.send('shot', { hit: true }, player.id);
+      if (id === BUTTONS.RECENTER && down) tracker.recenter(player.id);
+      if (id === BUTTONS.FIRE && down) {
+        /* check for a hit at tracker.get(player.id) */
+      }
     });
 
-    return () => {
-      /* optional teardown: stop loops, release resources */
-    };
+    let frame = requestAnimationFrame(function loop(now) {
+      tracker.update(now, 16 / 9);
+      /* draw each player at toPixels(tracker.get(player.id), { width, height }) */
+      frame = requestAnimationFrame(loop);
+    });
+
+    return () => cancelAnimationFrame(frame); // optional teardown
   },
 };
 ```
 
 `src/channels/index.js` discovers the folder with `import.meta.glob`, and Vite code-splits it
 into its own chunk. No file in `core/` or `console/` changes. Subscriptions made through `api`
-are removed automatically when the channel stops. [`src/channels/monitor`](src/channels/monitor/index.js)
+are removed automatically when the channel stops. [`src/channels/aim`](src/channels/aim/index.js)
 is a complete working example.
+
+Until there's a menu, open a specific channel with `?channel=<id>` on the console URL, for
+example `?channel=monitor` for the raw Input Monitor.
 
 ## Project structure
 
@@ -139,13 +181,18 @@ src/
     channel-host.js         mounts channels, routes messages (+ Channel API types)
   controller/
     main.js                 join flow, handshake, buttons
-    orientation.js          deviceorientation wrapper
-    orientation-math.js     re-center math (pure, tested)
-    orientation-stream.js   fixed-rate sampler (tested)
+    motion.js               devicemotion wrapper (raw rotation rate + timestamp)
+    motion-stream.js        rate-capped sender (tested)
     device.js               fullscreen, wake lock, vibration
+  aim/                      shared aiming for every game, no DOM except the panel
+    aim-math.js             deadzone, integration, clamping, smoothing (pure, tested)
+    aim-tracker.js          one crosshair per player; what games use (tested)
+    aim-settings.js         sensitivity/deadzone/smoothing defaults and saving
+    debug-panel.js          hidden tuning panel (press D)
   channels/
     index.js                channel discovery and loading
-    monitor/                Milestone 1: live input monitor
+    aim/                    Milestone 2: crosshair aiming (the default channel)
+    monitor/                raw input monitor (?channel=monitor)
   ui/                       shared styles and DOM helpers
 ```
 
@@ -153,7 +200,7 @@ src/
 
 ### 1. Supabase
 
-Milestone 1 uses **Broadcast** and **Presence** only. There are no tables, no SQL, and no RLS policies.
+The app uses **Broadcast** and **Presence** only. There are no tables, no SQL, and no RLS policies.
 
 1. Create a project at [supabase.com](https://supabase.com). The free plan is fine; pick a
    region close to you, because every message round-trips through it.
@@ -203,20 +250,26 @@ re-centers.
 | `npm test`        | unit tests (Vitest)         |
 | `npm run format`  | Prettier                    |
 
-Tuning: add `?hz=60` to a controller URL to change its send rate (10–60, default 30).
+Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, default 60). Press
+<kbd>D</kbd> on the console for the aim tuning panel.
 
 ## Limitations and roadmap
 
-- **Quota.** Supabase meters Realtime messages per second and per month. At 30 Hz one moving
-  controller sends about 108k messages an hour. Four players at 60 Hz can hit free-tier limits,
-  so check your plan's quotas before raising the rate.
+- **Quota.** Supabase meters Realtime messages per second and per month. At 60 Hz one controller
+  sends about 216k messages an hour, and every broadcast is also delivered to everyone else in the
+  room. Several players can hit free-tier limits, so check your plan's quotas, or lower the rate
+  with `?hz=30`.
 - **Latency.** Every message goes through a Supabase region, which typically adds tens of
   milliseconds. That's fine for pointing and Wii-style party games. A WebRTC data channel,
   signalled over this same room, is the upgrade path, and `transport.js` is the seam for it.
 - **Room security.** Rooms are public: anyone who knows a 4-letter code can join it. Next step:
   private channels with Supabase anonymous sign-ins and an RLS policy on `realtime.messages`.
-- **Re-centering uses Euler offsets.** This is accurate for pointing near the centre. Quaternion
-  re-centering would handle extreme poses and portrait/landscape changes properly.
+- **Aiming assumes the TV-remote grip.** Held upright with the screen facing you, turning
+  left/right shows up on `gamma` instead of `alpha`, so the crosshair moves less. Using gravity
+  (from `accelerationIncludingGravity`) to work out which axis is "up" would make any grip work.
+- **Drift.** Adding up speeds over time also adds up tiny sensor errors, so after a while the
+  crosshair and the phone can disagree about where "centre" is. The deadzone slows this down, and
+  Re-center fixes it.
 - **Console reload reassigns slots.** Controllers reconnect automatically but may swap slot numbers.
 - Next milestones: a channel picker menu, the first game, and controller-side channel UIs
   (`sys/channel` already tells phones which channel is active).

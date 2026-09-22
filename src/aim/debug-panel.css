@@ -1,0 +1,89 @@
+.aim-debug {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.aim-debug header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.aim-debug kbd {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.aim-debug-sliders {
+  display: grid;
+  gap: 10px;
+}
+
+.aim-debug-slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  font-weight: 700;
+}
+
+.aim-debug-slider output {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.aim-debug-slider input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.aim-debug-reset {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.aim-debug-raw {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: right;
+}
+
+.aim-debug-raw th {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.aim-debug-raw th,
+.aim-debug-raw td {
+  padding: 2px 4px;
+}
+
+.aim-debug-raw td:first-child {
+  text-align: left;
+  font-family: var(--font);
+  font-weight: 800;
+  color: var(--player);
+}
+
+.aim-debug-note {
+  font-size: 12px;
+  color: var(--muted);
+}

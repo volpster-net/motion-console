@@ -6,9 +6,9 @@
  * transport never needs to know which games exist.
  *
  *   {
- *     v:    1,            protocol version; mismatches are dropped
+ *     v:    2,            protocol version; mismatches are dropped
  *     ch:   'input',      namespace: 'sys' | 'input' | a channel id
- *     type: 'orient',     message type within the namespace
+ *     type: 'motion',     message type within the namespace
  *     from: 'p_k3j9x2qa', sender's client id
  *     to:   'p_k3j9x2qa', optional; omitted means everyone in the room
  *     seq:  1042,         per-sender counter, used to detect lost messages
@@ -16,7 +16,8 @@
  *   }
  */
 
-export const PROTOCOL_VERSION = 1;
+// v2: controllers send raw `motion` (rotation rate) instead of `orient` angles.
+export const PROTOCOL_VERSION = 2;
 
 /** The one Supabase broadcast event name all envelopes travel on. */
 export const BROADCAST_EVENT = 'msg';
@@ -42,12 +43,13 @@ export const SYS = Object.freeze({
 /** `input` messages: controller state, consumed by whichever channel is active. */
 export const INPUT = Object.freeze({
   /**
-   * d: { yaw, pitch, roll } in degrees relative to the last re-center, 0.1° precision.
-   *   yaw   -180..180, positive = pointing right
-   *   pitch -180..180, positive = pointing up
-   *   roll   -90..90,  positive = rolled right (clockwise, seen from behind)
+   * d: { alpha, beta, gamma, t } — the phone's raw gyroscope reading.
+   *   alpha, beta, gamma  rotation rate in degrees per second, 0.1 precision,
+   *                       around the phone's z, x and y axes (DeviceMotionEvent.rotationRate)
+   *   t                   when the phone measured it, in ms on the phone's own clock.
+   *                       Only differences between samples mean anything.
    */
-  ORIENT: 'orient',
+  MOTION: 'motion',
   /** d: { id: ButtonId, down: boolean } — sent on both press and release. */
   BUTTON: 'button',
 });

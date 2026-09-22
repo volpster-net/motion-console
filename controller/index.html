@@ -46,7 +46,7 @@
         <button id="start-btn" class="btn btn-primary btn-large" type="button">
           Tap to connect
         </button>
-        <p class="hint">Hold your phone upright in portrait, like a remote.</p>
+        <p class="hint">Point the top of your phone at the screen, like a TV remote.</p>
       </section>
 
       <!-- 3. The controller itself. -->
@@ -57,19 +57,20 @@
           <span id="pad-room" class="pad-room"></span>
         </header>
 
-        <dl class="readout">
+        <dl class="readout" aria-describedby="readout-caption">
           <div>
-            <dt>Yaw</dt>
-            <dd id="yaw">–</dd>
+            <dt>Alpha</dt>
+            <dd id="alpha">–</dd>
           </div>
           <div>
-            <dt>Pitch</dt>
-            <dd id="pitch">–</dd>
+            <dt>Beta</dt>
+            <dd id="beta">–</dd>
           </div>
           <div>
-            <dt>Roll</dt>
-            <dd id="roll">–</dd>
+            <dt>Gamma</dt>
+            <dd id="gamma">–</dd>
           </div>
+          <p id="readout-caption" class="readout-caption">Rotation rate, degrees per second</p>
         </dl>
         <p id="sensor-warning" class="sensor-warning" hidden></p>
 

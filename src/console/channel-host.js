@@ -2,7 +2,7 @@
  * Mounts one channel at a time into the stage and routes messages to it.
  *
  * A channel sees:
- *   - `input` messages from every admitted controller (orientation, buttons)
+ *   - `input` messages from every admitted controller (motion, buttons)
  *   - messages in its own namespace (`ch === <channel id>`)
  * and can only send in its own namespace, so channels can't interfere with
  * the core protocol or each other.
@@ -22,7 +22,7 @@
  *   onChange: (fn: (players: Player[]) => void) => () => void,
  * }} players
  * @property {(type: string, fn: MessageHandler) => () => void} onInput
- *   Subscribe to core controller input, e.g. `onInput(INPUT.ORIENT, ...)`.
+ *   Subscribe to core controller input, e.g. `onInput(INPUT.MOTION, ...)`.
  * @property {(type: string, fn: MessageHandler) => () => void} onMessage
  *   Subscribe to messages in this channel's own namespace.
  * @property {(type: string, data?: object, to?: string) => boolean} send

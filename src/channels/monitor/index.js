@@ -1,18 +1,20 @@
 /**
- * Input Monitor: the Milestone 1 channel. It shows each controller's live
- * orientation, button state, and link health. It uses only the public
- * ChannelApi, so it's also the reference for how a game plugs in.
+ * Input Monitor: shows each controller's raw rotation rate, button state, and
+ * link health, plus a small aim preview driven by the shared aim tracker.
+ * Open it with `?channel=monitor` on the console URL.
  */
 import './monitor.css';
+import { createAimTracker, loadAimSettings } from '../../aim/index.js';
 import { playerColor, playerLabel } from '../../core/players.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
-import { formatDegrees } from '../../ui/format.js';
+import { formatSigned } from '../../ui/format.js';
 
-/** Degrees from centre that put the aim dot at the edge of the preview. */
-const AIM_RANGE = { yaw: 30, pitch: 20 };
-/** Degrees that fill an axis bar. */
-const AXIS_RANGE = 90;
-const AXES = /** @type {const} */ (['yaw', 'pitch', 'roll']);
+/** The preview box's shape, width ÷ height. */
+const PREVIEW_ASPECT = 16 / 9;
+/** Degrees per second that fill an axis bar. */
+const AXIS_RANGE = 180;
+const AXES = /** @type {const} */ (['alpha', 'beta', 'gamma']);
+const AXIS_LABELS = { alpha: 'α', beta: 'β', gamma: 'γ' };
 const IDLE_AFTER_MS = 1500;
 const LOG_LIMIT = 12;
 
@@ -34,7 +36,7 @@ function createCard(player) {
       ${AXES.map(
         (axis) => `
         <div class="axis" data-axis="${axis}">
-          <dt>${axis[0].toUpperCase()}${axis.slice(1)}</dt>
+          <dt>${AXIS_LABELS[axis]}</dt>
           <span class="axis-bar"><span class="axis-fill"></span></span>
           <dd>–</dd>
         </div>`,
@@ -61,8 +63,8 @@ function createCard(player) {
       [...el.querySelectorAll('.lamp')].map((lamp) => [lamp.dataset.button, lamp]),
     ),
 
-    /** @type {{ yaw: number, pitch: number, roll: number } | null} */
-    orient: null,
+    /** @type {{ alpha: number, beta: number, gamma: number } | null} */
+    motion: null,
     /** @type {Record<string, boolean>} */
     buttons: {},
     lastInputAt: -Infinity,
@@ -81,8 +83,14 @@ function setSlot(card, slot) {
   card.badge.textContent = playerLabel(slot);
 }
 
-/** Writes card state to the DOM. Called once per animation frame, not per message. */
-function renderCard(card, now) {
+/**
+ * Writes card state to the DOM. Called once per animation frame, not per message.
+ *
+ * @param {ReturnType<typeof createCard>} card
+ * @param {number} now
+ * @param {import('../../aim/aim-tracker.js').Aim} aim
+ */
+function renderCard(card, now, aim) {
   const elapsed = now - card.windowStart;
   if (elapsed >= 1000) {
     card.rate = Math.round((card.windowCount * 1000) / elapsed);
@@ -91,6 +99,9 @@ function renderCard(card, now) {
     card.dirty = true;
   }
   card.el.classList.toggle('is-idle', now - card.lastInputAt > IDLE_AFTER_MS);
+  // The aim preview moves every frame (smoothing keeps it gliding between messages).
+  card.dot.style.left = `${50 + (aim.x / PREVIEW_ASPECT) * 100}%`;
+  card.dot.style.top = `${50 + aim.y * 100}%`;
   if (!card.dirty) return;
   card.dirty = false;
 
@@ -99,16 +110,12 @@ function renderCard(card, now) {
     lamp.toggleAttribute('data-on', !!card.buttons[id]);
   }
 
-  if (!card.orient) return;
+  if (!card.motion) return;
   for (const axis of AXES) {
-    const deg = card.orient[axis];
-    card.axes[axis].value.textContent = formatDegrees(deg);
-    card.axes[axis].fill.style.setProperty('--v', String(clamp(deg / AXIS_RANGE, -1, 1)));
+    const rate = card.motion[axis];
+    card.axes[axis].value.textContent = formatSigned(rate);
+    card.axes[axis].fill.style.setProperty('--v', String(clamp(rate / AXIS_RANGE, -1, 1)));
   }
-  const x = clamp(card.orient.yaw / AIM_RANGE.yaw, -1, 1);
-  const y = clamp(-card.orient.pitch / AIM_RANGE.pitch, -1, 1);
-  card.dot.style.left = `${50 + x * 50}%`;
-  card.dot.style.top = `${50 + y * 50}%`;
 }
 
 /** @type {import('../../console/channel-host.js').Channel} */
@@ -120,7 +127,7 @@ export default {
     root.innerHTML = `
       <header class="monitor-head">
         <h1>Input Monitor</h1>
-        <p>Live data from every connected controller. Tilt the phone to move the dot.</p>
+        <p>Raw rotation rate (°/s) from every connected controller. Turn the phone to move the dot.</p>
       </header>
       <div class="monitor-grid"></div>
       <p class="card monitor-empty">Scan the QR code with your phone to connect a controller.</p>
@@ -133,6 +140,7 @@ export default {
     const log = /** @type {HTMLElement} */ (root.querySelector('.monitor-log ol'));
     /** @type {Map<string, ReturnType<typeof createCard>>} */
     const cards = new Map();
+    const tracker = createAimTracker(loadAimSettings());
 
     function syncCards(players) {
       const present = new Set(players.map((p) => p.id));
@@ -140,6 +148,7 @@ export default {
         if (!present.has(id)) {
           card.el.remove();
           cards.delete(id);
+          tracker.remove(id);
         }
       }
       for (const player of players) {
@@ -182,19 +191,22 @@ export default {
     api.players.onChange(syncCards);
     syncCards(api.players.list());
 
-    api.onInput(INPUT.ORIENT, (data, { player, msg }) => {
+    api.onInput(INPUT.MOTION, (data, { player, msg }) => {
       const card = record(player, msg);
-      if (card) card.orient = /** @type {any} */ (data);
+      if (card) card.motion = /** @type {any} */ (data);
+      tracker.push(player.id, /** @type {any} */ (data));
     });
 
     api.onInput(INPUT.BUTTON, (data, { player, msg }) => {
       const card = record(player, msg);
       if (card) card.buttons[data.id] = data.down;
       if (data.down) logPress(player, data.id);
+      if (data.down && data.id === BUTTONS.RECENTER) tracker.recenter(player.id);
     });
 
     let frame = requestAnimationFrame(function loop(now) {
-      for (const card of cards.values()) renderCard(card, now);
+      tracker.update(now, PREVIEW_ASPECT);
+      for (const [id, card] of cards) renderCard(card, now, tracker.get(id));
       frame = requestAnimationFrame(loop);
     });
 
