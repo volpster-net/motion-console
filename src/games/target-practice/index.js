@@ -7,15 +7,14 @@
  *   index.js          this file: settings, screens, and the game loop
  *   round.js          the rules: spawning, difficulty, scoring (no screen, easy to test)
  *   render.js         drawing targets, effects, and the crosshair on a canvas
- *   sounds.js         sound effects made with the Web Audio API
- *   personal-best.js  saving the best score in the browser
+ *   sounds.js         sound effects, made with the shared synthesizer
  */
 import './target-practice.css';
 import { createAimTracker, loadAimSettings } from '../../aim/index.js';
 import { playerColor, playerLabel } from '../../core/players.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
 import meta from './meta.js';
-import { loadPersonalBest, savePersonalBest } from './personal-best.js';
+import { createPersonalBest } from '../shared/personal-best.js';
 import { createRenderer, KIND_COLORS } from './render.js';
 import { createRound } from './round.js';
 import { createSounds } from './sounds.js';
@@ -239,7 +238,8 @@ function createSession(container, controller) {
    *   | { name: 'results', at: number, round: ReturnType<typeof createRound> }}
    */
   let phase = { name: 'title' };
-  let personalBest = loadPersonalBest();
+  const best = createPersonalBest(id);
+  let personalBest = best.load();
 
   function showTitle() {
     phase = { name: 'title' };
@@ -283,7 +283,7 @@ function createSession(container, controller) {
     const isNewBest = results.score > personalBest;
     if (isNewBest) {
       personalBest = results.score;
-      savePersonalBest(personalBest);
+      best.save(personalBest);
     }
     phase = { name: 'results', at: now, round };
     root.dataset.phase = 'results';

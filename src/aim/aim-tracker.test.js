@@ -144,4 +144,24 @@ describe('createAimTracker', () => {
     tracker.update(0, ASPECT);
     expect(tracker.get('p1').x).toBeCloseTo(9 / DEGREES_PER_SCREEN_HEIGHT);
   });
+
+  it("reports each sample's turning speeds to motion listeners", () => {
+    const tracker = exact();
+    const seen = [];
+    const off = tracker.onMotion((id, rates, t) => seen.push({ id, pitch: rates.pitch, t }));
+    // Held flat, tipping the top up is spin around x (alpha, in xyz order).
+    for (const t of [0, 10, 20]) {
+      tracker.push('p1', { alpha: 200, beta: 0, gamma: 0, gx: 0, gy: 0, gz: 9.8, t });
+    }
+    tracker.update(0, ASPECT);
+    // The first sample has nothing before it to measure from.
+    expect(seen).toEqual([
+      { id: 'p1', pitch: 200, t: 10 },
+      { id: 'p1', pitch: 200, t: 20 },
+    ]);
+    off();
+    tracker.push('p1', { alpha: 200, beta: 0, gamma: 0, gx: 0, gy: 0, gz: 9.8, t: 30 });
+    tracker.update(16, ASPECT);
+    expect(seen).toHaveLength(2);
+  });
 });

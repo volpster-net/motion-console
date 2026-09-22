@@ -129,7 +129,7 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
    * at `sample`'s speed at the end. We use the average of the two, which is
    * more accurate than using either one alone when the speed is changing.
    */
-  function step(aimer, previous, sample, aspect) {
+  function step(id, aimer, previous, sample, aspect) {
     const dtMs = sample.t - previous.t;
     // Zero or negative: a duplicate, or the phone reloaded and its clock restarted.
     // Too long: a gap we can't trust. Either way, skip it.
@@ -139,6 +139,7 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
     const start = aimRates(aimer, previous);
     const end = aimRates(aimer, sample);
     aimer.rates = end;
+    for (const fn of motionListeners) fn(id, end, sample.t);
     const average = { yaw: (start.yaw + end.yaw) / 2, pitch: (start.pitch + end.pitch) / 2 };
     const rates = applyDeadzone(average, settings.deadzone);
     const moved = integrate(aimer.target, rates, dtMs, settings.sensitivity);
@@ -146,9 +147,26 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
   }
 
   let lastFrameAt = null;
+  /** @type {Set<(id: string, rates: import('./aim-math.js').AimRates, t: number) => void>} */
+  const motionListeners = new Set();
 
   return {
     settings,
+
+    /**
+     * Calls `fn` with every motion sample's turning speeds as the tracker
+     * processes them (during update(), in the order the phone measured them).
+     * Games use this to spot gestures, like a basketball flick or a bat swing.
+     *
+     * @param {(id: string, rates: import('./aim-math.js').AimRates, t: number) => void} fn
+     *   `rates.yaw` is left/right turning and `rates.pitch` is up/down tipping,
+     *   in degrees per second, however the phone is held. `t` is the phone's timestamp.
+     * @returns {() => void} stop listening
+     */
+    onMotion(fn) {
+      motionListeners.add(fn);
+      return () => motionListeners.delete(fn);
+    },
 
     /**
      * Queues a motion sample. Call this from your motion message handler.
@@ -189,9 +207,9 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
       lastFrameAt = now;
       const glide = smoothingFactor(frameMs, settings.smoothing);
 
-      for (const aimer of aimers.values()) {
+      for (const [id, aimer] of aimers) {
         for (const sample of aimer.queue) {
-          if (aimer.previous) step(aimer, aimer.previous, sample, aspect);
+          if (aimer.previous) step(id, aimer, aimer.previous, sample, aspect);
           else followGravity(aimer, sample, 0);
           aimer.previous = sample;
         }

@@ -11,10 +11,10 @@ gyroscope becomes a pointer, with buttons.
   <img src="docs/controller.png" alt="Controller page on a phone with a sensor readout, Re-center button and a large Fire button" width="150" />
 </p>
 
-**Status: Milestone 4.** After pairing, the console shows a **launcher menu**: point at a game and
-pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. The first game, **Target
-Practice**, has you hit rings before they vanish and chase your personal best. New games plug into
-the menu by adding a folder.
+**Status: Milestone 5.** After pairing, the console shows a **launcher menu**: point at a game and
+pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Two games so
+far: **Target Practice** (hit rings before they vanish) and **Hoops** (flick your phone to shoot
+baskets). New games plug into the menu by adding a folder.
 
 ## How it works
 
@@ -259,6 +259,40 @@ Title screen → 3-2-1 countdown → 60-second round → results → trigger to 
 `{ start, end }` ramp evenly over the round. The rules themselves live in `round.js`, which has
 no screen or sound code and is unit-tested.
 
+### Hoops
+
+An arcade basketball shootout, and the first game that reads a **gesture** rather than just
+pointing. Same flow as Target Practice: title → 3-2-1 → 60 seconds → results.
+
+- **Aim** by turning the phone left or right; the crosshair sits at rim height so you can line it
+  up with the hoop. **Shoot** by flicking the phone upwards. The flick's speed sets the shot's
+  power: every shot leaves at the same arc, so too soft falls short and too hard flies long.
+- A **power meter** shows where each flick landed against the sweet spot, with its speed in °/s,
+  so players can learn the right flick. No gyroscope? Hold **Fire** to charge the meter and let go
+  to shoot.
+- The ball flies in 3D with gravity and bounces off the rim, backboard, and floor, so shots can
+  swish, bank in, rattle in, or rim out. Shots still in the air at the buzzer count.
+- A basket is 2, a swish 3. Three makes in a row puts you **on fire**: ×2 until you miss. The
+  hoop starts sliding side to side halfway through the round.
+
+How a flick is spotted ([`flick.js`](src/games/basketball/flick.js)): the aim tracker reports every
+motion sample's up/down turning speed, however the phone is held. A flick starts when that speed
+passes a threshold, ends when it drops back, and its peak is its strength. A short cooldown
+ignores the wobble of lowering the phone afterwards.
+
+**Tuning the feel.** `CONFIG` at the top of
+[`src/games/basketball/index.js`](src/games/basketball/index.js) holds the court (real metres),
+scoring, bounciness, and the flick. The flick speeds are starting guesses: the power meter shows
+real flick speeds, so adjust `flick.weakest` and `flick.strongest` to match how people actually
+flick. The physics in `court.js` is unit-tested: a perfect shot swishes, a soft one falls short,
+and so on.
+
+### Shared by games
+
+`src/games/shared/` holds what games have in common: `synth.js` (Web Audio sound effects from
+tones and noise, no files) and `personal-best.js` (a best score per game in the browser). The aim
+tracker's `onMotion()` lets any game watch each motion sample, for gestures like a flick or a swing.
+
 ## Project structure
 
 ```
@@ -289,13 +323,22 @@ src/
   games/
     game.js                 the game contract (meta + start/stop)
     index.js                game discovery: listGames(), loadGame()
+    shared/                 helpers any game can use
+      synth.js              Web Audio sound effects from tones and noise
+      personal-best.js      best score per game, in localStorage
     target-practice/        Milestone 3: the first game
       meta.js               name, description, and tile art for the menu
       index.js              CONFIG, screens, and the game loop
       round.js              rules: spawning, difficulty, scoring (pure, tested)
       render.js             canvas drawing: targets, effects, crosshair
-      sounds.js             Web Audio sound effects
-      personal-best.js      best score in localStorage
+      sounds.js             sound effects
+    basketball/             Milestone 5: Hoops
+      meta.js               name, description, and tile art for the menu
+      index.js              CONFIG, screens, shooting, and the game loop
+      court.js              3D ball flight, bounces, scoring, perspective (pure, tested)
+      flick.js              spotting the shooting flick (pure, tested)
+      render.js             canvas drawing: court, hoop, net, balls
+      sounds.js             sound effects
   channels/
     index.js                channel discovery and loading
     launcher/               Milestone 4: the home menu (the default channel)
@@ -384,5 +427,8 @@ Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, defau
   crosshair and the phone can disagree about where "centre" is. The deadzone slows this down, and
   Re-center fixes it.
 - **Console reload reassigns slots.** Controllers reconnect automatically but may swap slot numbers.
-- Next milestones: more games, multiplayer Target Practice, and controller-side game UIs
+- **Flick strength varies by person.** Hoops' flick range is a starting guess; the power meter
+  shows real flick speeds to tune it from. Per-player calibration would be a nice next step.
+- Next milestones: a baseball home-run derby (swing timing, which needs network-delay
+  compensation), multiplayer, and controller-side game UIs
   (`sys/channel` already tells phones which channel is active).
