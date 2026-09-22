@@ -1,0 +1,25 @@
+{
+  "name": "motion-console",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A Wii-inspired browser game console that uses an Android phone as a motion controller.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "prettier": "^3.9.8",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}

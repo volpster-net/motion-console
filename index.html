@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A Wii-inspired browser console. Scan the code with your phone to use it as a motion controller."
+    />
+    <title>Motion Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main class="console-layout">
+      <aside class="lobby">
+        <header class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Motion Console</span>
+        </header>
+
+        <section class="card join-card" aria-labelledby="join-heading">
+          <p id="join-heading" class="eyebrow">Scan to join</p>
+          <div
+            id="qr"
+            class="qr"
+            role="img"
+            aria-label="QR code linking to the controller page"
+          ></div>
+          <p class="eyebrow">Room code</p>
+          <p id="room-code" class="room-code">····</p>
+          <a id="join-url" class="join-url" target="_blank" rel="noopener"></a>
+          <p id="host-warning" class="host-warning" hidden>
+            You're on <code>localhost</code>, which your phone can't reach. Open this page with the
+            <strong>Network</strong> URL that <code>npm run dev</code> prints.
+          </p>
+        </section>
+
+        <section class="card players-card" aria-labelledby="players-heading">
+          <h2 id="players-heading" class="eyebrow">Controllers</h2>
+          <ul id="player-list" class="player-list"></ul>
+        </section>
+
+        <p id="connection-status" class="status" data-state="connecting">Connecting…</p>
+      </aside>
+
+      <section id="stage" class="stage" aria-live="off"></section>
+    </main>
+    <script type="module" src="/src/console/main.js"></script>
+  </body>
+</html>

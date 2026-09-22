@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#eef1f5" />
+    <title>Controller · Motion Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="controller">
+    <main id="app" class="controller-app">
+      <!-- 1. No room in the URL: type the code shown on the console. -->
+      <section id="screen-join" class="screen screen-center" hidden>
+        <h1>Join a console</h1>
+        <form id="join-form" class="join-form" novalidate>
+          <label class="eyebrow" for="join-code">Room code</label>
+          <input
+            id="join-code"
+            class="code-input"
+            maxlength="4"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            inputmode="text"
+            required
+          />
+          <p id="join-error" class="form-error" hidden>
+            Enter the 4-letter code shown on the console.
+          </p>
+          <button class="btn btn-primary" type="submit">Join</button>
+        </form>
+      </section>
+
+      <!-- 2. Tap to connect: a user gesture is needed for sensors, fullscreen, and wake lock. -->
+      <section id="screen-start" class="screen screen-center" hidden>
+        <p class="eyebrow">Room</p>
+        <p id="start-code" class="start-code"></p>
+        <button id="start-btn" class="btn btn-primary btn-large" type="button">
+          Tap to connect
+        </button>
+        <p class="hint">Hold your phone upright in portrait, like a remote.</p>
+      </section>
+
+      <!-- 3. The controller itself. -->
+      <section id="screen-pad" class="screen screen-pad" hidden>
+        <header class="pad-header">
+          <span id="player-badge" class="player-badge">–</span>
+          <span id="pad-status" class="status" data-state="connecting">Connecting…</span>
+          <span id="pad-room" class="pad-room"></span>
+        </header>
+
+        <dl class="readout">
+          <div>
+            <dt>Yaw</dt>
+            <dd id="yaw">–</dd>
+          </div>
+          <div>
+            <dt>Pitch</dt>
+            <dd id="pitch">–</dd>
+          </div>
+          <div>
+            <dt>Roll</dt>
+            <dd id="roll">–</dd>
+          </div>
+        </dl>
+        <p id="sensor-warning" class="sensor-warning" hidden></p>
+
+        <button id="recenter-btn" class="pad-btn btn-recenter" type="button">Re-center</button>
+        <button id="fire-btn" class="pad-btn btn-fire" type="button">Fire</button>
+      </section>
+    </main>
+    <script type="module" src="/src/controller/main.js"></script>
+  </body>
+</html>
