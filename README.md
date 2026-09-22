@@ -4,6 +4,8 @@ A Wii-inspired game console that runs in the browser, with your phone as the mot
 Open the console on a laptop or TV, scan the QR code with an Android phone, and the phone's
 gyroscope becomes a pointer, with buttons.
 
+**Live demo: [motion.volpster.net](https://motion.volpster.net)**. Open it on a laptop or TV, then scan the QR code with your phone.
+
 <p>
   <img src="docs/console.png" alt="Console page showing the room QR code, the connected players, and live orientation data" width="640" />
   <img src="docs/controller.png" alt="Controller page on a phone with orientation readout, Re-center button and a large Fire button" width="150" />
