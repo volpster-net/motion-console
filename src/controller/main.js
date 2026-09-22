@@ -2,7 +2,7 @@ import '../ui/base.css';
 import './controller.css';
 import { createClientId, normalizeRoomCode } from '../core/ids.js';
 import { playerColor, playerLabel } from '../core/players.js';
-import { BUTTONS, INPUT, NS, SYS } from '../core/protocol.js';
+import { BUTTONS, INPUT, NS, OUTPUT, parseVibration, SYS } from '../core/protocol.js';
 import { joinRoom } from '../core/transport.js';
 import { renderFatal } from '../ui/fatal.js';
 import { formatSigned } from '../ui/format.js';
@@ -138,6 +138,11 @@ function runSession(room, sensor) {
     if (msg.ch === NS.SYS && msg.type === SYS.WELCOME) {
       setPlayer(msg.d.slot);
       vibrate(40);
+    }
+    // Games can buzz this phone, e.g. harder for a hit than a miss.
+    if (msg.ch === NS.OUTPUT && msg.type === OUTPUT.VIBRATE) {
+      const pattern = parseVibration(msg.d.pattern);
+      if (pattern !== null) vibrate(pattern);
     }
   });
 

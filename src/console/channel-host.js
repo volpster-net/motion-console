@@ -27,6 +27,8 @@
  *   Subscribe to messages in this channel's own namespace.
  * @property {(type: string, data?: object, to?: string) => boolean} send
  *   Send in this channel's namespace, to everyone or to one player id.
+ * @property {(playerId: string, pattern: number | number[]) => boolean} vibrate
+ *   Buzz one player's phone. `pattern` is as for navigator.vibrate().
  *
  * @typedef {object} Channel
  * @property {string} title
@@ -35,7 +37,7 @@
  *   function. Subscriptions made through `api` are cleaned up automatically.
  */
 import { createEmitter } from '../core/emitter.js';
-import { NS, SYS } from '../core/protocol.js';
+import { NS, OUTPUT, SYS } from '../core/protocol.js';
 import { loadChannel } from '../channels/index.js';
 
 /**
@@ -93,6 +95,7 @@ export function createChannelHost({ room, players, stage }) {
       onInput: (type, fn) => events.on(`${NS.INPUT}:${type}`, fn),
       onMessage: (type, fn) => events.on(`${id}:${type}`, fn),
       send: (type, data, to) => room.send(id, type, data, to),
+      vibrate: (playerId, pattern) => room.send(NS.OUTPUT, OUTPUT.VIBRATE, { pattern }, playerId),
     };
 
     const teardown = channel.mount(root, api);

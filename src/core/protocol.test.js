@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEnvelope, parseEnvelope, PROTOCOL_VERSION } from './protocol.js';
+import { createEnvelope, parseEnvelope, parseVibration, PROTOCOL_VERSION } from './protocol.js';
 
 describe('protocol envelopes', () => {
   const base = { ch: 'input', type: 'motion', from: 'p_abc', seq: 7, data: { alpha: 1 } };
@@ -39,5 +39,22 @@ describe('protocol envelopes', () => {
     ['a numeric recipient', { ...createEnvelope(base), to: 42 }],
   ])('rejects %s', (_, raw) => {
     expect(parseEnvelope(raw)).toBeNull();
+  });
+});
+
+describe('parseVibration', () => {
+  it('accepts a duration or a pattern', () => {
+    expect(parseVibration(30)).toBe(30);
+    expect(parseVibration([60, 40, 90])).toEqual([60, 40, 90]);
+  });
+
+  it.each([
+    ['a string', 'buzz'],
+    ['a negative duration', -5],
+    ['an empty pattern', []],
+    ['too long in total', [800, 100, 800]],
+    ['too many steps', Array(11).fill(10)],
+  ])('rejects %s', (_, pattern) => {
+    expect(parseVibration(pattern)).toBeNull();
   });
 });

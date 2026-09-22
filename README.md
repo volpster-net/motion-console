@@ -11,8 +11,9 @@ gyroscope becomes a pointer, with buttons.
   <img src="docs/controller.png" alt="Controller page on a phone with a sensor readout, Re-center button and a large Fire button" width="150" />
 </p>
 
-**Status: Milestone 2.** Pairing, buttons, and crosshair aiming work end to end. Point the phone at
-the screen and a crosshair follows it. Games come next.
+**Status: Milestone 3.** The first game, **Target Practice**, is playable: aim with your phone,
+pull the trigger to hit rings before they vanish, and chase your personal best. It loads straight
+after pairing; a launcher menu comes next.
 
 ## How it works
 
@@ -87,6 +88,7 @@ Every message is one envelope:
 | `sys`          | `channel` | console → all            | `{ id }` (active channel changed)                  |
 | `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, gx, gy, gz, t }`: see below |
 | `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter', down: boolean }`      |
+| `output`       | `vibrate` | console → one controller | `{ pattern }`, as for `navigator.vibrate()`, ≤ 1 s |
 | `<channel id>` | anything  | either way               | defined by that channel                            |
 
 `alpha`, `beta`, and `gamma` are the phone's raw rotation rate in degrees per second
@@ -95,7 +97,7 @@ Which phone axis each one means depends on the browser (see [Aiming](#aiming)). 
 are the accelerometer including gravity, in m/s² along the phone's x, y, z axes; they're omitted
 if the phone doesn't provide them.
 `t` is when the phone measured them, in milliseconds on the phone's own clock; only the gaps
-between samples matter. `sys` and `input` are reserved. Any other `ch` value
+between samples matter. `sys`, `input`, and `output` are reserved. Any other `ch` value
 belongs to the channel with that id, which isolates games from the core and from each other.
 
 ## Aiming
@@ -169,8 +171,51 @@ into its own chunk. No file in `core/` or `console/` changes. Subscriptions made
 are removed automatically when the channel stops. [`src/channels/aim`](src/channels/aim/index.js)
 is a complete working example.
 
-Until there's a menu, open a specific channel with `?channel=<id>` on the console URL, for
-example `?channel=monitor` for the raw Input Monitor.
+Until there's a menu, open a specific channel with `?channel=<id>` on the console URL:
+`?channel=aim` for the aiming sandbox, or `?channel=monitor` for the raw Input Monitor.
+
+## Games
+
+A game is a folder in `src/games/` whose `index.js` default-exports one object
+([`src/games/game.js`](src/games/game.js) has the full contract):
+
+```js
+export default {
+  id: 'target-practice',
+  name: 'Target Practice',
+  description: 'Aim with your phone and hit the rings before they vanish.',
+  start(container, controller) {
+    /* draw into container; listen with controller.onInput(...); buzz with controller.vibrate(...) */
+  },
+  stop() {
+    /* undo everything: loops, listeners, sounds, elements */
+  },
+};
+```
+
+`controller` is the same API channels get, plus `vibrate(playerId, pattern)` to buzz one phone.
+Until the launcher exists, `gameAsChannel(game)` wraps a game as a channel, which is how Target
+Practice is the default screen.
+
+### Target Practice
+
+Title screen → 3-2-1 countdown → 60-second round → results → trigger to play again.
+
+- Ring targets pop up at random, clear of the top bar, and vanish after about 2 seconds. Up to
+  three are on screen at once.
+- Outer ring 10, middle 25, bullseye 50. Five hits in a row doubles your points, ten triples
+  them, and a miss resets the streak.
+- Targets shrink and vanish sooner as the round goes on.
+- Hits burst and float their points, and buzz the phone hard; misses puff and buzz lightly.
+  Sounds are synthesized with the Web Audio API. Browsers only allow sound after a click on the
+  console page, so there's a button for that.
+- Results show score, accuracy, best streak, and personal best (saved in the browser).
+- Single-player for now: the lowest-numbered player plays.
+
+**Tuning the feel.** Every timing, size, and point value is in the `CONFIG` object at the top of
+[`src/games/target-practice/index.js`](src/games/target-practice/index.js). Settings written as
+`{ start, end }` ramp evenly over the round. The rules themselves live in `round.js`, which has
+no screen or sound code and is unit-tested.
 
 ## Project structure
 
@@ -199,9 +244,18 @@ src/
     aim-tracker.js          one crosshair per player; what games use (tested)
     aim-settings.js         sensitivity/deadzone/smoothing defaults and saving
     debug-panel.js          hidden tuning panel (press D)
+  games/
+    game.js                 the start/stop contract, and gameAsChannel()
+    target-practice/        Milestone 3: the first game
+      index.js              CONFIG, screens, and the game loop
+      round.js              rules: spawning, difficulty, scoring (pure, tested)
+      render.js             canvas drawing: targets, effects, crosshair
+      sounds.js             Web Audio sound effects
+      personal-best.js      best score in localStorage
   channels/
     index.js                channel discovery and loading
-    aim/                    Milestone 2: crosshair aiming (the default channel)
+    target-practice/        runs the game (the default channel)
+    aim/                    Milestone 2: aiming sandbox (?channel=aim)
     monitor/                raw input monitor (?channel=monitor)
   ui/                       shared styles and DOM helpers
 ```
@@ -281,5 +335,6 @@ Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, defau
   crosshair and the phone can disagree about where "centre" is. The deadzone slows this down, and
   Re-center fixes it.
 - **Console reload reassigns slots.** Controllers reconnect automatically but may swap slot numbers.
-- Next milestones: a channel picker menu, the first game, and controller-side channel UIs
-  (`sys/channel` already tells phones which channel is active).
+- Next milestones: a launcher menu using the games' start/stop contract, multiplayer Target
+  Practice, and controller-side game UIs (`sys/channel` already tells phones which channel is
+  active).

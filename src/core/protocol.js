@@ -26,6 +26,7 @@ export const BROADCAST_EVENT = 'msg';
 export const NS = Object.freeze({
   SYS: 'sys',
   INPUT: 'input',
+  OUTPUT: 'output',
 });
 
 export const RESERVED_NAMESPACES = new Set(Object.values(NS));
@@ -56,6 +57,33 @@ export const INPUT = Object.freeze({
   /** d: { id: ButtonId, down: boolean } — sent on both press and release. */
   BUTTON: 'button',
 });
+
+/** `output` messages: console → one controller, things the phone should do. */
+export const OUTPUT = Object.freeze({
+  /**
+   * d: { pattern: number | number[] } — buzz the phone, in the format of
+   * navigator.vibrate(): one duration in ms, or alternating buzz/pause durations.
+   */
+  VIBRATE: 'vibrate',
+});
+
+/** Longest vibration a phone will accept from the console, so a bug can't buzz it forever. */
+export const MAX_VIBRATION_MS = 1000;
+
+/**
+ * Validates a vibration pattern from the network. Returns a safe pattern, or
+ * null if it's malformed or too long in total.
+ *
+ * @param {unknown} pattern
+ * @returns {number | number[] | null}
+ */
+export function parseVibration(pattern) {
+  const steps = Array.isArray(pattern) ? pattern : [pattern];
+  if (steps.length === 0 || steps.length > 10) return null;
+  if (!steps.every((ms) => Number.isFinite(ms) && ms >= 0)) return null;
+  if (steps.reduce((total, ms) => total + ms, 0) > MAX_VIBRATION_MS) return null;
+  return /** @type {number | number[]} */ (pattern);
+}
 
 export const BUTTONS = Object.freeze({
   FIRE: 'fire',
