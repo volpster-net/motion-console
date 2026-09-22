@@ -270,3 +270,21 @@ describe('special targets', () => {
     expect(round.streak).toBe(2);
   });
 });
+
+describe('pausing a round', () => {
+  it('moves the end of the round and every target later by the paused time', () => {
+    const round = createRound({ config: PLAIN, startedAt: 0 });
+    round.update(0, BOUNDS);
+    const before = { ...round.targets[0] };
+    const pausedFor = 10_000;
+    round.shift(pausedFor);
+
+    const [after] = round.targets;
+    expect(after.bornAt).toBe(before.bornAt + pausedFor);
+    expect(after.expiresAt).toBe(before.expiresAt + pausedFor);
+    expect(round.timeLeftMs(pausedFor)).toBe(CONFIG.round.durationMs);
+    // The target is still up just before its shifted expiry.
+    round.update(after.expiresAt - 1, BOUNDS);
+    expect(round.targets).toContainEqual(after);
+  });
+});

@@ -139,7 +139,8 @@ export function findSpawnPosition({ radius, bounds, existing, config, random }) 
  *
  * @param {{ config: Config, startedAt: number, random?: () => number }} options
  */
-export function createRound({ config, startedAt, random = Math.random }) {
+export function createRound({ config, startedAt: start, random = Math.random }) {
+  let startedAt = start;
   const { durationMs } = config.round;
   /** @type {Target[]} */
   let targets = [];
@@ -173,6 +174,23 @@ export function createRound({ config, startedAt, random = Math.random }) {
 
     /** @param {number} now */
     timeLeftMs: (now) => Math.max(0, durationMs - (now - startedAt)),
+
+    /**
+     * Moves every time in the round later by `ms`. Used after a pause: the
+     * round ends later, and each target's clock resumes where it stopped,
+     * as if the paused time never happened.
+     *
+     * @param {number} ms
+     */
+    shift(ms) {
+      startedAt += ms;
+      nextSpawnAt += ms;
+      targets = targets.map((target) => ({
+        ...target,
+        bornAt: target.bornAt + ms,
+        expiresAt: target.expiresAt + ms,
+      }));
+    },
     isOver,
 
     /**

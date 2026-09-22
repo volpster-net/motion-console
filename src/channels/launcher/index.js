@@ -4,13 +4,22 @@
  * It shows a tile for every game in src/games/. Players point at a tile with
  * their phone and pull the trigger (Fire) to start it; on the console you can
  * also click a tile. During a game, Home on any phone (or Esc on the console)
- * stops it and comes back here.
+ * pauses it, with a choice to resume or quit to the menu.
  *
  * The launcher is always in one of three modes:
  *
- *   menu ──pick a tile──▶ loading ──downloaded──▶ playing
- *     ▲                      │                       │
- *     └────── Home ──────────┴──────── Home ─────────┘
+ *   menu ──pick a tile──▶ loading ──downloaded──▶ playing ◀──┐
+ *     ▲                      │                       │        │ Resume
+ *     │                      │                     Home       │ (after 3-2-1)
+ *     │                      │                       ▼        │
+ *     └────── Home ──────────┴───── Quit ──────── paused ─────┘
+ *
+ * "Paused" is part of playing: the game is still loaded, just frozen, with
+ * the pause screen on top. Games that don't support pausing (no pause()
+ * function) quit straight to the menu on Home instead.
+ *
+ * The game also pauses by itself if a player's phone disconnects or the
+ * console's browser tab is hidden, so nobody comes back to a lost round.
  *
  * Games follow the start/stop contract in src/games/game.js. Each one gets
  * its own copy of the controller API, so when it stops, anything it forgot
@@ -20,6 +29,7 @@ import './launcher.css';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
 import { listGames, loadGame } from '../../games/index.js';
 import { createMenu } from './menu.js';
+import { createPauseOverlay } from './pause.js';
 import { createScopedController } from './scoped-controller.js';
 
 const GAME_PARAM = 'game';
@@ -44,7 +54,13 @@ export default {
     /**
      * @type {{ name: 'menu' }
      *   | { name: 'loading', id: string }
-     *   | { name: 'playing', game: import('../../games/game.js').Game, dispose: () => void }}
+     *   | {
+     *       name: 'playing',
+     *       game: import('../../games/game.js').Game,
+     *       container: HTMLElement,
+     *       scope: ReturnType<typeof createScopedController>,
+     *       pause: ReturnType<typeof createPauseOverlay> | null,
+     *     }}
      */
     let mode = { name: 'menu' };
     /** @type {ReturnType<typeof createMenu> | null} */
@@ -81,12 +97,12 @@ export default {
       container.className = 'launcher-game';
       root.replaceChildren(container);
 
-      const { controller, dispose } = createScopedController(api);
-      mode = { name: 'playing', game, dispose };
+      const scope = createScopedController(api);
+      mode = { name: 'playing', game, container, scope, pause: null };
       document.title = `${game.name} · Motion Console`;
       setGameParam(id);
       try {
-        game.start(container, controller);
+        game.start(container, scope.controller);
       } catch (err) {
         console.error(err);
         goHome(`${game.name} hit a problem and was closed. ${err.message}`);
@@ -106,20 +122,96 @@ export default {
 
     function stopGame() {
       if (mode.name !== 'playing') return;
+      mode.pause?.destroy();
       try {
         mode.game.stop();
       } catch (err) {
         console.error(err);
       }
-      mode.dispose();
+      mode.scope.dispose();
     }
 
-    // Home on any phone, or Esc on the console, always comes back here.
+    /**
+     * Freezes the game and shows the pause screen. Returns false if the game
+     * can't pause.
+     *
+     * @param {string} [reason]  shown on the pause screen
+     */
+    function pauseGame(reason) {
+      if (mode.name !== 'playing') return false;
+      if (mode.pause) return true;
+      const { game, container, scope } = mode;
+      if (typeof game.pause !== 'function' || typeof game.resume !== 'function') return false;
+      try {
+        game.pause();
+      } catch (err) {
+        console.error(err);
+        return false;
+      }
+      scope.setMuted(true);
+      mode.pause = createPauseOverlay({
+        container,
+        api,
+        gameName: game.name,
+        reason,
+        onResume: resumeGame,
+        onQuit: () => goHome(),
+      });
+      return true;
+    }
+
+    /** Called when the resume countdown finishes. */
+    function resumeGame() {
+      if (mode.name !== 'playing' || !mode.pause) return;
+      mode.pause.destroy();
+      mode.pause = null;
+      mode.scope.setMuted(false);
+      try {
+        mode.game.resume();
+      } catch (err) {
+        console.error(err);
+        goHome(`${mode.game.name} hit a problem and was closed. ${err.message}`);
+      }
+    }
+
+    /**
+     * Home on a phone or Esc on the console:
+     *   playing → pause (or quit, for games that can't pause)
+     *   paused  → resume
+     *   loading → cancel
+     */
+    function onHome() {
+      if (mode.name === 'loading') return goHome();
+      if (mode.name !== 'playing') return;
+      if (!mode.pause) {
+        if (!pauseGame()) goHome();
+      } else if (!mode.pause.counting) {
+        mode.pause.resume();
+      }
+    }
+
     const offHome = api.onInput(INPUT.BUTTON, ({ id, down }) => {
-      if (id === BUTTONS.HOME && down) goHome();
+      if (id === BUTTONS.HOME && down) onHome();
     });
-    const onKey = (event) => event.key === 'Escape' && goHome();
+    const onKey = (event) => event.key === 'Escape' && onHome();
     window.addEventListener('keydown', onKey);
+
+    // Pause by itself when the console tab is hidden…
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') pauseGame();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // …or when a player's phone disconnects.
+    const slotted = (players) =>
+      new Set(players.filter((player) => player.slot !== null).map((player) => player.id));
+    let connected = slotted(api.players.list());
+    const offPlayers = api.players.onChange((players) => {
+      const now = slotted(players);
+      const someoneLeft = [...connected].some((id) => !now.has(id));
+      connected = now;
+      if (someoneLeft) pauseGame('A controller disconnected.');
+    });
 
     showMenu();
     // `?game=target-practice` in the console's address jumps straight into a game.
@@ -134,7 +226,9 @@ export default {
       mode = { name: 'menu' };
       menu?.destroy();
       offHome();
+      offPlayers();
       window.removeEventListener('keydown', onKey);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   },
 };

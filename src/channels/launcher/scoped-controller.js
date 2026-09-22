@@ -4,13 +4,21 @@
  * launcher calls `dispose()` to remove any the game forgot, so a buggy game
  * can't keep reacting to phones after it's gone.
  *
+ * While the game is paused, `setMuted(true)` stops phone input reaching it,
+ * so pulling the trigger on the pause screen can't also fire in the game.
+ *
  * @param {import('../../console/channel-host.js').ChannelApi} api  the launcher's own channel API
- * @returns {{ controller: import('../../games/game.js').GameController, dispose: () => void }}
+ * @returns {{
+ *   controller: import('../../games/game.js').GameController,
+ *   setMuted: (muted: boolean) => void,
+ *   dispose: () => void,
+ * }}
  */
 export function createScopedController(api) {
   /** @type {Set<() => void>} */
   const subscriptions = new Set();
   let disposed = false;
+  let muted = false;
 
   /** Remembers an unsubscribe function, and returns one that also forgets it. */
   function track(off) {
@@ -33,8 +41,12 @@ export function createScopedController(api) {
         get: api.players.get,
         onChange: (fn) => track(api.players.onChange(fn)),
       },
-      onInput: (type, fn) => track(api.onInput(type, fn)),
+      onInput: (type, fn) => track(api.onInput(type, (...args) => muted || fn(...args))),
       vibrate: (playerId, pattern) => !disposed && api.vibrate(playerId, pattern),
+    },
+
+    setMuted(value) {
+      muted = value;
     },
 
     dispose() {

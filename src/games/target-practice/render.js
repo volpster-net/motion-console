@@ -267,6 +267,11 @@ export function createRenderer(canvas, config) {
       effects.push({ kind: 'puff', ...position, at: now });
     },
 
+    /** Moves every effect's start time later by `ms`, so effects freeze during a pause. */
+    shift(ms) {
+      effects = effects.map((effect) => ({ ...effect, at: effect.at + ms }));
+    },
+
     /** Forgets all effects, e.g. when a new round starts. */
     clearEffects() {
       effects = [];

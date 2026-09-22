@@ -146,8 +146,18 @@ export function stop() {
   session = null;
 }
 
+/** Freezes the game: the clock, targets, and effects all stop until resume(). */
+export function pause() {
+  session?.pause();
+}
+
+/** Carries on from exactly where pause() stopped. */
+export function resume() {
+  session?.resume();
+}
+
 /** @type {import('../game.js').Game} */
-export default { id, name, description, start, stop };
+export default { id, name, description, start, stop, pause, resume };
 
 /**
  * @param {HTMLElement} container
@@ -300,10 +310,10 @@ function createSession(container, controller) {
   // immediately.
   cleanups.push(
     controller.onInput(INPUT.MOTION, (sample, { player }) => {
-      tracker.push(player.id, /** @type {any} */ (sample));
+      if (!paused) tracker.push(player.id, /** @type {any} */ (sample));
     }),
     controller.onInput(INPUT.BUTTON, ({ id: button, down }, { player }) => {
-      if (!down) return;
+      if (!down || paused) return;
       if (button === BUTTONS.RECENTER) tracker.recenter(player.id);
       if (button === BUTTONS.FIRE && player.id === activePlayer()?.id) pullTrigger(player);
     }),
@@ -362,8 +372,13 @@ function createSession(container, controller) {
   // All timing compares `now` with timestamps we stored earlier, rather than
   // using setTimeout. So there are no timers to forget in stop(), and a
   // paused or slow tab can't make the game's clock drift.
+  //
+  // While paused, frames are skipped entirely, so the last picture stays on
+  // screen and nothing moves.
+  let paused = false;
+  let pausedAt = 0;
   let frameRequest = requestAnimationFrame(function frame(now) {
-    if (size.height > 0) {
+    if (size.height > 0 && !paused) {
       tracker.update(now, size.width / size.height);
       advance(now);
       draw(now);
@@ -421,6 +436,27 @@ function createSession(container, controller) {
   showTitle();
 
   return {
+    pause() {
+      if (paused) return;
+      paused = true;
+      pausedAt = performance.now();
+    },
+
+    /**
+     * Everything in the game is timed by comparing "now" with timestamps saved
+     * earlier. So to resume, we move every saved timestamp later by however
+     * long the pause lasted, and the game carries on as if no time had passed.
+     */
+    resume() {
+      if (!paused) return;
+      const pausedFor = performance.now() - pausedAt;
+      if (phase.name === 'countdown') phase.startedAt += pausedFor;
+      if (phase.name === 'playing') phase.round.shift(pausedFor);
+      if (phase.name === 'results') phase.at += pausedFor;
+      renderer.shift(pausedFor);
+      paused = false;
+    },
+
     destroy() {
       for (const cleanup of cleanups) cleanup();
       container.replaceChildren();

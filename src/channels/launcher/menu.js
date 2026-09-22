@@ -1,25 +1,9 @@
 /**
- * The launcher's menu screen: a tile per game, and a crosshair per player.
- *
- * Picking works like pointing a Wii Remote at a menu: each frame, we work out
- * which tile (if any) sits under each player's crosshair and highlight it.
- * When a player pulls the trigger, the tile under their crosshair starts.
+ * The launcher's menu screen: a tile per game. Players pick one by pointing
+ * and pulling the trigger (see picker.js), or by clicking it.
  */
-import {
-  createAimDebugPanel,
-  createAimTracker,
-  loadAimSettings,
-  toPixels,
-} from '../../aim/index.js';
-import { playerColor, playerLabel } from '../../core/players.js';
-import { BUTTONS, INPUT } from '../../core/protocol.js';
-
-const CROSSHAIR_SVG = `
-  <svg viewBox="-24 -24 48 48" aria-hidden="true">
-    <circle r="12" />
-    <path d="M0 -22v10M0 12v10M-22 0h10M12 0h10" />
-    <circle class="launcher-dot" r="2" />
-  </svg>`;
+import { createAimDebugPanel } from '../../aim/index.js';
+import { createPicker } from './picker.js';
 
 /** @param {string} text */
 const escapeHtml = (text) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -62,130 +46,31 @@ export function createMenu({ root, api, games, onPick }) {
         </div>
       </li>
     </ul>
-    <p class="launcher-error" role="alert" hidden></p>
-    <div class="launcher-pointers"></div>`;
+    <p class="launcher-error" role="alert" hidden></p>`;
   root.append(view);
 
   const hint = /** @type {HTMLElement} */ (view.querySelector('.launcher-hint'));
   const errorBox = /** @type {HTMLElement} */ (view.querySelector('.launcher-error'));
-  const pointers = /** @type {HTMLElement} */ (view.querySelector('.launcher-pointers'));
   /** @type {HTMLElement[]} */
   const tiles = [...view.querySelectorAll('button.launcher-tile')];
-  const tracker = createAimTracker(loadAimSettings());
-  const destroyPanel = createAimDebugPanel({ tracker, players: api.players });
-  const offs = [];
 
-  // Clicking a tile works too, for testing on a laptop without a phone.
-  for (const tile of tiles) tile.addEventListener('click', () => onPick(tile.dataset.game));
-
-  // ---- Layout -------------------------------------------------------------
-  // Remember where each tile is (in pixels from the menu's top-left corner),
-  // and re-measure only when something changes size or the text changes.
-  let size = { width: 0, height: 0 };
-  /** @type {Array<{ tile: HTMLElement, left: number, top: number, right: number, bottom: number }>} */
-  let tileBoxes = [];
-  function measure() {
-    size = { width: view.clientWidth, height: view.clientHeight };
-    const origin = view.getBoundingClientRect();
-    tileBoxes = tiles.map((tile) => {
-      const box = tile.getBoundingClientRect();
-      return {
-        tile,
-        left: box.left - origin.left,
-        top: box.top - origin.top,
-        right: box.right - origin.left,
-        bottom: box.bottom - origin.top,
-      };
-    });
-  }
-  const resizeObserver = new ResizeObserver(measure);
-  resizeObserver.observe(view);
-  for (const tile of tiles) resizeObserver.observe(tile);
-
-  /** The tile under a point, if any. */
-  const tileAt = ({ x, y }) =>
-    tileBoxes.find((box) => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom)
-      ?.tile;
-
-  // ---- Players ------------------------------------------------------------
-  // Only players with a slot (not spectators) get a crosshair and can pick.
-  const playing = () => api.players.list().filter((player) => player.slot !== null);
-
-  /** @type {Map<string, HTMLElement>} */
-  const crosshairs = new Map();
-  function syncPlayers() {
-    const players = playing();
-    const present = new Set(players.map((player) => player.id));
-    for (const [id, el] of crosshairs) {
-      if (!present.has(id)) {
-        el.remove();
-        crosshairs.delete(id);
-        tracker.remove(id);
-      }
-    }
-    for (const player of players) {
-      let el = crosshairs.get(player.id);
-      if (!el) {
-        el = document.createElement('div');
-        el.className = 'launcher-crosshair';
-        el.innerHTML = `${CROSSHAIR_SVG}<span class="launcher-label"></span>`;
-        pointers.append(el);
-        crosshairs.set(player.id, el);
-      }
-      el.style.setProperty('--player', playerColor(player.slot));
-      el.querySelector('.launcher-label').textContent = playerLabel(player.slot);
-    }
-    hint.textContent =
-      players.length > 0
-        ? 'Point at a game and pull the trigger. During a game, press Home on your phone to come back here.'
-        : 'Scan the QR code with your phone to join, or click a game.';
-    measure(); // the hint's length can move the tiles
-  }
-  offs.push(api.players.onChange(syncPlayers));
-  syncPlayers();
-
-  // ---- Input --------------------------------------------------------------
-  offs.push(
-    api.onInput(INPUT.MOTION, (sample, { player }) => {
-      if (player.slot !== null) tracker.push(player.id, /** @type {any} */ (sample));
-    }),
-    api.onInput(INPUT.BUTTON, ({ id, down }, { player }) => {
-      if (!down || player.slot === null) return;
-      if (id === BUTTONS.RECENTER) tracker.recenter(player.id);
-      if (id === BUTTONS.FIRE) {
-        const tile = tileAt(toPixels(tracker.get(player.id), size));
-        if (tile) {
-          api.vibrate(player.id, 40);
-          onPick(tile.dataset.game);
-        }
-      }
-    }),
-  );
-
-  // ---- Each frame ---------------------------------------------------------
-  // Move the crosshairs, then highlight the tile each one is over (in that
-  // player's colour; if two players point at the same tile, the lower
-  // player number wins).
-  let frame = requestAnimationFrame(function loop(now) {
-    if (size.height > 0) {
-      tracker.update(now, size.width / size.height);
-      /** @type {Map<HTMLElement, string>} */
-      const hovered = new Map();
-      for (const player of playing()) {
-        const point = toPixels(tracker.get(player.id), size);
-        const el = crosshairs.get(player.id);
-        if (el) el.style.translate = `${point.x}px ${point.y}px`;
-        const tile = tileAt(point);
-        if (tile && !hovered.has(tile)) hovered.set(tile, playerColor(player.slot));
-      }
-      for (const tile of tiles) {
-        const color = hovered.get(tile);
-        tile.classList.toggle('is-hovered', !!color);
-        if (color) tile.style.setProperty('--player', color);
-      }
-    }
-    frame = requestAnimationFrame(loop);
+  const picker = createPicker({
+    area: view,
+    choices: tiles,
+    api,
+    onPick: (tile) => onPick(tile.dataset.game),
   });
+  const destroyPanel = createAimDebugPanel({ tracker: picker.tracker, players: api.players });
+
+  function updateHint() {
+    const anyone = api.players.list().some((player) => player.slot !== null);
+    hint.textContent = anyone
+      ? 'Point at a game and pull the trigger. During a game, press Home on your phone to pause.'
+      : 'Scan the QR code with your phone to join, or click a game.';
+    picker.measure(); // the hint's length can move the tiles
+  }
+  const offPlayers = api.players.onChange(updateHint);
+  updateHint();
 
   return {
     /** Shows that a game is downloading. */
@@ -209,9 +94,8 @@ export function createMenu({ root, api, games, onPick }) {
     },
 
     destroy() {
-      cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      for (const off of offs) off();
+      offPlayers();
+      picker.destroy();
       destroyPanel();
       view.remove();
     },

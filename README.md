@@ -12,7 +12,7 @@ gyroscope becomes a pointer, with buttons.
 </p>
 
 **Status: Milestone 4.** After pairing, the console shows a **launcher menu**: point at a game and
-pull the trigger to play, and press **Home** on your phone to come back. The first game, **Target
+pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. The first game, **Target
 Practice**, has you hit rings before they vanish and chase your personal best. New games plug into
 the menu by adding a folder.
 
@@ -203,6 +203,12 @@ launcher menu; nothing else changes. [`src/games/game.js`](src/games/game.js) ha
     stop() {
       /* undo everything: loops, timers, listeners, sounds, elements */
     },
+    pause() {
+      /* optional: freeze everything */
+    },
+    resume() {
+      /* optional: carry on from where pause() stopped */
+    },
   };
   ```
 
@@ -215,7 +221,13 @@ shared aim tracker in `src/aim/` for anything that points.
 - One tile per game, plus a "More games" placeholder. Every player's crosshair shows on the
   menu, and a tile lights up in the colour of whoever points at it. Fire starts it. You can also
   click a tile on the console, which is handy without a phone.
-- **Home** on any phone, or **Esc** on the console, stops the game and returns to the menu.
+- **Home** on any phone, or **Esc** on the console, pauses the game: it freezes, and a pause
+  screen offers **Resume** or **Quit to menu**, picked by pointing and pulling the trigger. Home
+  again also resumes. Resuming runs a 3-2-1 countdown so players can get their aim back.
+- The game also pauses by itself if a player's phone disconnects or the console tab is hidden.
+- While paused, the launcher stops phone input reaching the game, so the trigger on the pause
+  screen can't also fire in the game. Games without `pause()`/`resume()` quit straight to the menu
+  on Home.
 - Each game gets its own copy of `controller`; when it stops, the launcher removes any
   subscriptions the game forgot. Timers and window listeners are still the game's job in `stop()`.
 - The running game is kept in the address bar (`?game=target-practice`), so reloading the console
@@ -287,9 +299,11 @@ src/
   channels/
     index.js                channel discovery and loading
     launcher/               Milestone 4: the home menu (the default channel)
-      index.js              menu ↔ loading ↔ playing, Home and Esc, ?game=
-      menu.js               tiles, crosshairs, and picking
-      scoped-controller.js  per-game controller that cleans up after the game (tested)
+      index.js              menu ↔ loading ↔ playing ↔ paused, Home and Esc, ?game=
+      menu.js               the game tiles
+      picker.js             point-and-shoot picking, shared by the menu and pause screen
+      pause.js              the pause screen and resume countdown
+      scoped-controller.js  per-game controller: mutes input while paused, cleans up (tested)
     aim/                    Milestone 2: aiming sandbox (?channel=aim)
     monitor/                raw input monitor (?channel=monitor)
   ui/                       shared styles and DOM helpers

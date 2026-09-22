@@ -13,7 +13,13 @@
  *       id, name, description,                  the same as meta.js
  *       start(container, controller) { … },     draw into `container`, listen to `controller`
  *       stop() { … },                            undo everything start() did
+ *       pause() { … },                           optional: freeze everything
+ *       resume() { … },                          optional: carry on from where pause() stopped
  *     }
+ *
+ * Home on a phone pauses a game that has pause() and resume(): the launcher
+ * shows its pause screen on top and stops phone input reaching the game until
+ * it resumes. A game without them quits straight to the menu instead.
  *
  * stop() must leave nothing behind: no animation loops, timers, event
  * listeners, sounds, or elements. The launcher starts and stops games many
@@ -42,6 +48,8 @@
  * @typedef {GameMeta & {
  *   start: (container: HTMLElement, controller: GameController) => void,
  *   stop: () => void,
+ *   pause?: () => void,
+ *   resume?: () => void,
  * }} Game
  */
 

@@ -8,8 +8,11 @@ function fakeApi() {
     live.add(fn);
     return () => live.delete(fn);
   };
+  /** Delivers input to every subscriber, like a phone message would. */
+  const emit = (...args) => [...live].forEach((fn) => fn(...args));
   return {
     live,
+    emit,
     players: { list: () => [], get: () => undefined, onChange: subscribe },
     onInput: (_type, fn) => subscribe(fn),
     vibrate: vi.fn(() => true),
@@ -55,5 +58,18 @@ describe('createScopedController', () => {
     expect(api.live.size).toBe(0);
     expect(controller.vibrate('p1', 30)).toBe(false);
     expect(api.vibrate).not.toHaveBeenCalled();
+  });
+
+  it('holds back phone input while muted', () => {
+    const api = fakeApi();
+    const { controller, setMuted } = createScopedController(api);
+    const heard = vi.fn();
+    controller.onInput('button', heard);
+    setMuted(true);
+    api.emit({ id: 'fire' });
+    expect(heard).not.toHaveBeenCalled();
+    setMuted(false);
+    api.emit({ id: 'fire' });
+    expect(heard).toHaveBeenCalledTimes(1);
   });
 });
