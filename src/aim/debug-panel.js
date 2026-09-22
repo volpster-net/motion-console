@@ -11,7 +11,12 @@
 import './debug-panel.css';
 import { playerColor, playerLabel } from '../core/players.js';
 import { formatSigned as signed } from '../ui/format.js';
-import { AIM_SETTING_RANGES, DEFAULT_AIM_SETTINGS, saveAimSettings } from './aim-settings.js';
+import {
+  AIM_SETTING_RANGES,
+  AXIS_ORDER_CHOICES,
+  DEFAULT_AIM_SETTINGS,
+  saveAimSettings,
+} from './aim-settings.js';
 
 /**
  * @param {{
@@ -32,14 +37,22 @@ export function createAimDebugPanel({ tracker, players, key = 'd' }) {
       <kbd>${key.toUpperCase()}</kbd>
     </header>
     <div class="aim-debug-sliders"></div>
+    <label class="aim-debug-slider">
+      <span>Axis order</span>
+      <select class="aim-debug-axes"></select>
+    </label>
     <button type="button" class="aim-debug-reset">Reset to defaults</button>
     <table class="aim-debug-raw">
       <thead>
-        <tr><th></th><th>α</th><th>β</th><th>γ</th><th>x</th><th>y</th><th>Hz</th></tr>
+        <tr><th></th><th>α</th><th>β</th><th>γ</th><th>turn</th><th>tip</th><th>Hz</th></tr>
       </thead>
       <tbody></tbody>
     </table>
-    <p class="aim-debug-note">α β γ: raw rotation rate in °/s. x y: crosshair, in screen heights.</p>`;
+    <p class="aim-debug-note">
+      α β γ: raw rotation rate. turn, tip: what aiming uses (right and up are positive).
+      All in °/s. Turning left/right should move only <em>turn</em>; twisting your wrist
+      should move neither.
+    </p>`;
   document.body.append(panel);
 
   // One slider per setting. Moving it changes `settings` directly; the
@@ -68,6 +81,19 @@ export function createAimDebugPanel({ tracker, players, key = 'd' }) {
     sliders.append(row);
   }
 
+  // Which physical axis alpha, beta, and gamma mean (browsers disagree).
+  const axes = /** @type {HTMLSelectElement} */ (panel.querySelector('.aim-debug-axes'));
+  for (const [value, label] of Object.entries(AXIS_ORDER_CHOICES)) {
+    axes.add(new Option(label, value));
+  }
+  const refreshAxes = () => (axes.value = settings.axisOrder);
+  axes.addEventListener('change', () => {
+    settings.axisOrder = /** @type {any} */ (axes.value);
+    saveAimSettings(settings);
+  });
+  refreshAxes();
+  refreshers.push(refreshAxes);
+
   panel.querySelector('.aim-debug-reset').addEventListener('click', () => {
     Object.assign(settings, DEFAULT_AIM_SETTINGS);
     saveAimSettings(settings);
@@ -77,6 +103,7 @@ export function createAimDebugPanel({ tracker, players, key = 'd' }) {
   /** @param {KeyboardEvent} event */
   function onKey(event) {
     if (event.key.toLowerCase() !== key || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target instanceof HTMLSelectElement) return; // typing to pick an option
     panel.hidden = !panel.hidden;
   }
   window.addEventListener('keydown', onKey);
@@ -96,8 +123,8 @@ export function createAimDebugPanel({ tracker, players, key = 'd' }) {
             sample ? signed(sample.alpha) : '–',
             sample ? signed(sample.beta) : '–',
             sample ? signed(sample.gamma) : '–',
-            signed(aim.x, 2),
-            signed(aim.y, 2),
+            signed(aim.rates.yaw),
+            signed(aim.rates.pitch),
             String(aim.sampleRate),
           ];
           for (const text of cells) {

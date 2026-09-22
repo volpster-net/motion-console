@@ -27,6 +27,12 @@ describe('startMotionStream', () => {
     });
   });
 
+  it('includes the gravity reading when there is one', () => {
+    const { send, emit } = setup();
+    emit(0, { gx: 0.04, gy: 6.93, gz: 6.95 });
+    expect(send.mock.calls[0][2]).toMatchObject({ gx: 0, gy: 6.9, gz: 7 });
+  });
+
   it('forwards every reading from a sensor running at the send rate, despite jitter', () => {
     const { send, emit } = setup({ hz: 60 });
     // ~60 Hz with a little jitter either side of 16.7 ms.

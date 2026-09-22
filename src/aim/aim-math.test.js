@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyDeadzone,
+  AXIS_ORDERS,
   clampToArea,
   DEGREES_PER_SCREEN_HEIGHT,
   integrate,
@@ -10,9 +11,50 @@ import {
   toPixels,
 } from './aim-math.js';
 
+describe('AXIS_ORDERS', () => {
+  const rate = { alpha: 1, beta: 2, gamma: 3 };
+  it('reads alpha, beta, gamma as x, y, z (Android Chrome)', () => {
+    expect(AXIS_ORDERS.xyz(rate)).toEqual({ x: 1, y: 2, z: 3 });
+  });
+  it('reads alpha, beta, gamma as z, x, y (W3C spec)', () => {
+    expect(AXIS_ORDERS.zxy(rate)).toEqual({ x: 2, y: 3, z: 1 });
+  });
+});
+
 describe('toAimRates', () => {
-  it('turns anticlockwise alpha (turning left) into negative yaw, and passes beta through as pitch', () => {
-    expect(toAimRates({ alpha: 10, beta: 5, gamma: 99 })).toEqual({ yaw: -10, pitch: 5 });
+  // Phone flat like a TV remote: screen faces the ceiling, top edge points at the TV.
+  const flat = { x: 0, y: 0, z: 1 };
+  // Phone upright like a camera: top edge faces the ceiling, screen faces you.
+  const upright = { x: 0, y: 1, z: 0 };
+  // Halfway between: tilted 45°.
+  const tilted = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 };
+
+  it('turns right into positive yaw, whatever the grip', () => {
+    // Turning right = clockwise seen from above = negative spin around "up".
+    for (const up of [flat, upright, tilted]) {
+      const spin = { x: -20 * up.x, y: -20 * up.y, z: -20 * up.z };
+      const rates = toAimRates(spin, up);
+      expect(rates.yaw).toBeCloseTo(20);
+      expect(rates.pitch).toBeCloseTo(0);
+    }
+  });
+
+  it('turns aiming higher into positive pitch, whatever the grip', () => {
+    // Aiming higher is positive spin around the phone's left-to-right (x) axis.
+    for (const up of [flat, upright, tilted]) {
+      const rates = toAimRates({ x: 15, y: 0, z: 0 }, up);
+      expect(rates.yaw).toBeCloseTo(0);
+      expect(rates.pitch).toBeCloseTo(15);
+    }
+  });
+
+  it('ignores twisting the wrist', () => {
+    // Held flat, the phone points along its y axis, so a wrist twist is spin around y.
+    expect(toAimRates({ x: 0, y: 40, z: 0 }, flat)).toEqual({ yaw: -0, pitch: 0 });
+  });
+
+  it('pauses up/down aiming when the phone is on its side', () => {
+    expect(toAimRates({ x: 15, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }).pitch).toBe(0);
   });
 });
 

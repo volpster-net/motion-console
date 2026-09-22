@@ -80,18 +80,20 @@ Every message is one envelope:
 }
 ```
 
-| `ch`           | `type`    | Direction                | `d`                                           |
-| -------------- | --------- | ------------------------ | --------------------------------------------- |
-| `sys`          | `hello`   | controller → console     | `{}`                                          |
-| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`              |
-| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)             |
-| `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, t }`: see below        |
-| `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter', down: boolean }` |
-| `<channel id>` | anything  | either way               | defined by that channel                       |
+| `ch`           | `type`    | Direction                | `d`                                                |
+| -------------- | --------- | ------------------------ | -------------------------------------------------- |
+| `sys`          | `hello`   | controller → console     | `{}`                                               |
+| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`                   |
+| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)                  |
+| `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, gx, gy, gz, t }`: see below |
+| `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter', down: boolean }`      |
+| `<channel id>` | anything  | either way               | defined by that channel                            |
 
-`alpha`, `beta`, and `gamma` are the phone's raw rotation rate in degrees per second, around the
-axis out of the screen, the left-to-right axis, and the bottom-to-top axis
+`alpha`, `beta`, and `gamma` are the phone's raw rotation rate in degrees per second
 ([`DeviceMotionEvent.rotationRate`](https://developer.mozilla.org/docs/Web/API/DeviceMotionEvent/rotationRate)).
+Which phone axis each one means depends on the browser (see [Aiming](#aiming)). `gx`, `gy`, `gz`
+are the accelerometer including gravity, in m/s² along the phone's x, y, z axes; they're omitted
+if the phone doesn't provide them.
 `t` is when the phone measured them, in milliseconds on the phone's own clock; only the gaps
 between samples matter. `sys` and `input` are reserved. Any other `ch` value
 belongs to the channel with that id, which isolates games from the core and from each other.
@@ -101,8 +103,11 @@ belongs to the channel with that id, which isolates games from the core and from
 `src/aim/` turns a phone's spin into a crosshair position. Every game should use it rather than
 doing its own maths. The code comments explain each step in plain language.
 
-1. **Pick the aiming axes.** With the phone held like a TV remote (screen up, top edge pointing at
-   the TV), turning left/right is `alpha` and tipping up/down is `beta`. Rolling (`gamma`) is ignored.
+1. **Find left/right and up/down.** The gyroscope measures spin around the phone's own axes, but
+   aiming happens in the room. The phone also sends its gravity reading, so the console knows which
+   way is up. Left/right is spin around the vertical, and up/down is spin around a flat
+   left-to-right line. Twisting your wrist is neither, so it's ignored. This works whether the
+   phone is held flat like a TV remote, upright like a camera, or anywhere in between.
 2. **Deadzone.** Turning slower than a threshold counts as still, so sensor noise and shaky hands
    don't make the crosshair creep.
 3. **Integrate.** Speed × time = distance: each sample moves the crosshair by
@@ -115,9 +120,14 @@ doing its own maths. The code comments explain each step in plain language.
 Positions are in _screen heights_ from the centre, so the same wrist movement feels the same on a
 laptop and a TV. `toPixels()` converts them for drawing.
 
+**Browsers disagree about the axes.** The W3C spec says `alpha` is the spin around the axis out of
+the screen, but Chrome on Android reports `alpha`, `beta`, `gamma` as the x, y, z axes in order.
+Mixing them up turns wrist twists into aiming. The default is Android Chrome's order, and the tuning
+panel can switch it.
+
 **Tuning.** Press <kbd>D</kbd> on the console to open a panel with sliders for sensitivity,
-deadzone, and smoothing, plus each controller's live raw values. Settings apply instantly and are
-saved in that browser.
+deadzone, and smoothing, an axis-order menu, and each controller's live raw values next to the
+turn/tip speeds aiming uses. Settings apply instantly and are saved in that browser.
 
 ## Writing a channel
 
@@ -264,9 +274,9 @@ Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, defau
   signalled over this same room, is the upgrade path, and `transport.js` is the seam for it.
 - **Room security.** Rooms are public: anyone who knows a 4-letter code can join it. Next step:
   private channels with Supabase anonymous sign-ins and an RLS policy on `realtime.messages`.
-- **Aiming assumes the TV-remote grip.** Held upright with the screen facing you, turning
-  left/right shows up on `gamma` instead of `alpha`, so the crosshair moves less. Using gravity
-  (from `accelerationIncludingGravity`) to work out which axis is "up" would make any grip work.
+- **Gravity is approximate while moving.** The accelerometer feels hand movement as well as
+  gravity. The console follows it slowly to filter that out, but fast, jerky swings can briefly
+  tilt its idea of "up".
 - **Drift.** Adding up speeds over time also adds up tiny sensor errors, so after a while the
   crosshair and the phone can disagree about where "centre" is. The deadzone slows this down, and
   Re-center fixes it.

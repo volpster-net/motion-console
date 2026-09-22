@@ -1,7 +1,7 @@
 /**
  * Wraps `devicemotion` events. The phone stays "dumb": it passes on the
- * gyroscope's raw rotation rate with a timestamp, and the console does all
- * the aiming maths (see src/aim).
+ * gyroscope's raw rotation rate and the accelerometer's gravity reading with
+ * a timestamp, and the console does all the aiming maths (see src/aim).
  */
 
 /**
@@ -20,13 +20,20 @@ export function createMotionSensor() {
     const rate = event.rotationRate;
     // Devices without a gyroscope (and desktop browsers) send null rates.
     if (!rate || (rate.alpha == null && rate.beta == null && rate.gamma == null)) return;
-    latest = {
+    /** @type {MotionSample} */
+    const sample = {
       alpha: rate.alpha ?? 0,
       beta: rate.beta ?? 0,
       gamma: rate.gamma ?? 0,
       // When the sensor reading happened, in ms since the page loaded.
       t: event.timeStamp,
     };
+    // Which way is up, so the console can tell turning from twisting.
+    const gravity = event.accelerationIncludingGravity;
+    if (gravity && gravity.x != null && gravity.y != null && gravity.z != null) {
+      Object.assign(sample, { gx: gravity.x, gy: gravity.y, gz: gravity.z });
+    }
+    latest = sample;
     for (const fn of listeners) fn(latest);
   }
 

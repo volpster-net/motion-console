@@ -19,9 +19,12 @@
  */
 import {
   applyDeadzone,
+  AXIS_ORDERS,
   clampToArea,
   integrate,
   MAX_SAMPLE_GAP_MS,
+  normalize,
+  SCREEN_UP,
   smoothingFactor,
   smoothToward,
   toAimRates,
@@ -30,17 +33,33 @@ import { DEFAULT_AIM_SETTINGS } from './aim-settings.js';
 
 /** Frames longer than this (e.g. the tab was in the background) are treated as this long. */
 const MAX_FRAME_MS = 100;
+/**
+ * How quickly our idea of "up" follows the gravity reading, in ms.
+ *
+ * The accelerometer feels gravity plus every jolt of your hand. Gravity
+ * changes slowly (only when you change your grip), while hand jolts come
+ * and go fast. Following the reading slowly, with the same exponential
+ * smoothing the crosshair uses, keeps gravity and filters out the jolts.
+ */
+const GRAVITY_SMOOTHING_MS = 150;
 /** How often the per-player sample rate shown in the debug panel is recalculated. */
 const RATE_WINDOW_MS = 1000;
 
 /**
- * @typedef {import('./aim-math.js').RotationRate & { t: number }} MotionSample
- *   One gyroscope reading, stamped with the phone's clock in milliseconds.
+ * @typedef {import('./aim-math.js').RotationRate & {
+ *   t: number, gx?: number, gy?: number, gz?: number,
+ * }} MotionSample
+ *   One sensor reading, stamped with the phone's clock in milliseconds.
+ *   gx, gy, gz: the accelerometer including gravity, in m/s² along the phone's
+ *   x, y, z axes. At rest it points at the ceiling (it measures the push that
+ *   holds the phone up), so it tells us which way is up. Optional: without
+ *   it, the phone is assumed to be flat, screen up.
  *
  * @typedef {object} Aim
  * @property {number} x  Displayed (smoothed) position, in screen heights from the centre.
  * @property {number} y
  * @property {MotionSample | null} lastSample  The most recent raw reading, for debugging.
+ * @property {import('./aim-math.js').AimRates} rates  The latest left/right and up/down turning speeds, for debugging.
  * @property {number} sampleRate  Samples received per second, for debugging.
  */
 
@@ -64,6 +83,10 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
       previous: null,
       /** @type {MotionSample | null} */
       lastSample: null,
+      /** Which way the ceiling is, in the phone's axes (follows gravity). */
+      up: /** @type {import('./aim-math.js').Vector} */ (SCREEN_UP),
+      hasGravity: false,
+      rates: { yaw: 0, pitch: 0 },
       windowStart: null,
       windowCount: 0,
       sampleRate: 0,
@@ -75,6 +98,28 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
     let aimer = aimers.get(id);
     if (!aimer) aimers.set(id, (aimer = createAimer()));
     return aimer;
+  }
+
+  /** Nudges our idea of "up" towards this sample's gravity reading. */
+  function followGravity(aimer, sample, dtMs) {
+    if (sample.gx === undefined) return;
+    const reading = normalize({ x: sample.gx, y: sample.gy, z: sample.gz });
+    if (!reading) return;
+    // The first reading is taken as-is; after that, glide towards each new one.
+    const follow = aimer.hasGravity ? smoothingFactor(dtMs, GRAVITY_SMOOTHING_MS) : 1;
+    aimer.up =
+      normalize({
+        x: aimer.up.x + (reading.x - aimer.up.x) * follow,
+        y: aimer.up.y + (reading.y - aimer.up.y) * follow,
+        z: aimer.up.z + (reading.z - aimer.up.z) * follow,
+      }) ?? reading;
+    aimer.hasGravity = true;
+  }
+
+  /** Converts a raw sample to left/right and up/down turning speeds. */
+  function aimRates(aimer, sample) {
+    const toPhoneAxes = AXIS_ORDERS[settings.axisOrder] ?? AXIS_ORDERS.xyz;
+    return toAimRates(toPhoneAxes(sample), aimer.up);
   }
 
   /**
@@ -90,8 +135,10 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
     // Too long: a gap we can't trust. Either way, skip it.
     if (dtMs <= 0 || dtMs > MAX_SAMPLE_GAP_MS) return;
 
-    const start = toAimRates(previous);
-    const end = toAimRates(sample);
+    followGravity(aimer, sample, dtMs);
+    const start = aimRates(aimer, previous);
+    const end = aimRates(aimer, sample);
+    aimer.rates = end;
     const average = { yaw: (start.yaw + end.yaw) / 2, pitch: (start.pitch + end.pitch) / 2 };
     const rates = applyDeadzone(average, settings.deadzone);
     const moved = integrate(aimer.target, rates, dtMs, settings.sensitivity);
@@ -145,6 +192,7 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
       for (const aimer of aimers.values()) {
         for (const sample of aimer.queue) {
           if (aimer.previous) step(aimer, aimer.previous, sample, aspect);
+          else followGravity(aimer, sample, 0);
           aimer.previous = sample;
         }
         if (aimer.queue.length > 0) aimer.lastSample = aimer.queue[aimer.queue.length - 1];
@@ -174,6 +222,7 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
         x: aimer.shown.x,
         y: aimer.shown.y,
         lastSample: aimer.lastSample,
+        rates: aimer.rates,
         sampleRate: aimer.sampleRate,
       };
     },

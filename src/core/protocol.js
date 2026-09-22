@@ -43,9 +43,12 @@ export const SYS = Object.freeze({
 /** `input` messages: controller state, consumed by whichever channel is active. */
 export const INPUT = Object.freeze({
   /**
-   * d: { alpha, beta, gamma, t } — the phone's raw gyroscope reading.
-   *   alpha, beta, gamma  rotation rate in degrees per second, 0.1 precision,
-   *                       around the phone's z, x and y axes (DeviceMotionEvent.rotationRate)
+   * d: { alpha, beta, gamma, gx, gy, gz, t } — the phone's raw sensor readings.
+   *   alpha, beta, gamma  rotation rate in degrees per second, 0.1 precision
+   *                       (DeviceMotionEvent.rotationRate). Which phone axis each
+   *                       name means varies by browser; see AXIS_ORDERS in src/aim.
+   *   gx, gy, gz          accelerometer including gravity, m/s², along the phone's
+   *                       x, y, z axes (accelerationIncludingGravity). Optional.
    *   t                   when the phone measured it, in ms on the phone's own clock.
    *                       Only differences between samples mean anything.
    */

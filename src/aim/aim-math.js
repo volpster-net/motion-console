@@ -46,39 +46,91 @@ export const MAX_SAMPLE_GAP_MS = 100;
 
 /**
  * @typedef {{ alpha: number, beta: number, gamma: number }} RotationRate
- *   Raw gyroscope reading from the phone, in degrees per second, one number
- *   per axis of the phone itself:
- *     alpha: spinning around the axis that sticks out of the screen
- *     beta:  tipping around the axis that runs left to right across the screen
- *     gamma: rolling around the axis that runs from the bottom edge to the top
+ *   Raw gyroscope reading from the phone, in degrees per second. Which
+ *   physical axis each name refers to depends on the browser (see AXIS_ORDERS).
+ *
+ * @typedef {{ x: number, y: number, z: number }} Vector
+ *   A direction or rotation measured along the phone's own three axes:
+ *     x: runs left to right across the screen
+ *     y: runs from the bottom edge to the top edge
+ *     z: sticks straight out of the screen, towards your face
  *
  * @typedef {{ yaw: number, pitch: number }} AimRates
  *   The two turns that matter for aiming, in degrees per second:
  *     yaw:   turning left/right. Positive = turning right.
- *     pitch: tipping up/down. Positive = tipping the top edge up.
+ *     pitch: tipping up/down. Positive = aiming higher.
  *
  * @typedef {{ x: number, y: number }} Position  In screen heights (see above).
  */
 
 /**
- * Picks out the aiming turns from the raw gyroscope axes.
+ * Browsers disagree about which of alpha/beta/gamma is which axis.
  *
- * This assumes the phone is held like a TV remote: screen facing the ceiling,
- * top edge pointing at the TV.
+ * The W3C spec says alpha is the spin around z, beta around x, and gamma
+ * around y. Chrome on Android instead reports them in plain x, y, z order.
+ * Getting this wrong swaps "turning" with "twisting your wrist", so it's a
+ * setting (in the D panel) rather than a guess buried in the code.
+ */
+export const AXIS_ORDERS = Object.freeze({
+  /** Chrome on Android: alpha = x, beta = y, gamma = z. */
+  xyz: (rate) => ({ x: rate.alpha, y: rate.beta, z: rate.gamma }),
+  /** The W3C spec: alpha = z, beta = x, gamma = y. */
+  zxy: (rate) => ({ x: rate.beta, y: rate.gamma, z: rate.alpha }),
+});
+
+/** Which way is "up" when we have no gravity reading: phone flat, screen facing the ceiling. */
+export const SCREEN_UP = Object.freeze({ x: 0, y: 0, z: 1 });
+
+/** @param {Vector} a @param {Vector} b */
+const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+/**
+ * Scales a vector to length 1, so it describes only a direction.
  *
- * - Turning left/right is a spin around the axis sticking out of the screen,
- *   which is `alpha`. The gyroscope counts anticlockwise (seen from above) as
- *   positive, which is turning *left*, so we flip the sign to make "right"
- *   positive.
- * - Tipping the top edge up is a turn around the left-to-right axis, which is
- *   `beta`. Tipping up is already positive.
- * - `gamma` (rolling your wrist) doesn't move the crosshair, so it's ignored.
+ * @param {Vector} v
+ * @returns {Vector | null} null if the vector is too short to have a direction
+ */
+export function normalize(v) {
+  const length = Math.hypot(v.x, v.y, v.z);
+  return length < 1e-6 ? null : { x: v.x / length, y: v.y / length, z: v.z / length };
+}
+
+/**
+ * Works out how fast the phone is aiming left/right and up/down, however
+ * it's held.
  *
- * @param {RotationRate} rate
+ * The gyroscope measures spin around the phone's own axes. But "left/right"
+ * and "up/down" belong to the room, not the phone: tilt the phone 45° and a
+ * pure left/right turn shows up partly on one phone axis and partly on another.
+ * So we use gravity to find the room's directions, then measure the spin
+ * around those instead.
+ *
+ * - Left/right (yaw) is spin around the room's vertical axis, the `up`
+ *   direction from gravity. The dot product measures how much of the spin is
+ *   around that axis. Spin counts anticlockwise (seen from above) as positive,
+ *   which is turning *left*, so we flip the sign to make "right" positive.
+ * - Up/down (pitch) is spin around the room's horizontal left-to-right axis.
+ *   The phone's own x axis runs left to right across the screen, so we take
+ *   that and remove any tilt it has towards vertical (that's the
+ *   `x - (x·up) up` step), leaving a flat left-to-right line.
+ * - Twisting your wrist spins the phone around the direction it points,
+ *   which is neither of those axes, so it doesn't move the crosshair.
+ *
+ * This works whether you hold the phone flat like a TV remote, upright like a
+ * camera, or anywhere in between.
+ *
+ * @param {Vector} spin  rotation rate around the phone's x, y, z axes (see AXIS_ORDERS)
+ * @param {Vector} up    unit vector pointing at the ceiling, in phone axes
  * @returns {AimRates}
  */
-export function toAimRates({ alpha, beta }) {
-  return { yaw: -alpha, pitch: beta };
+export function toAimRates(spin, up) {
+  const flatRight = normalize({ x: 1 - up.x * up.x, y: -up.x * up.y, z: -up.x * up.z });
+  return {
+    yaw: -dot(spin, up),
+    // If the phone's x axis points straight up (phone held sideways), there's no
+    // sensible "left to right", so up/down aiming pauses rather than going haywire.
+    pitch: flatRight ? dot(spin, flatRight) : 0,
+  };
 }
 
 /**

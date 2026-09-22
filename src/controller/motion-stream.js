@@ -31,12 +31,16 @@ export function startMotionStream({ onSample, send, hz }) {
 
   return onSample((sample) => {
     if (sample.t - lastSentAt < minGapMs) return;
+    /** @type {Record<string, number>} */
     const data = {
       alpha: round1(sample.alpha),
       beta: round1(sample.beta),
       gamma: round1(sample.gamma),
       t: round1(sample.t),
     };
+    if (sample.gx !== undefined) {
+      Object.assign(data, { gx: round1(sample.gx), gy: round1(sample.gy), gz: round1(sample.gz) });
+    }
     if (send(NS.INPUT, INPUT.MOTION, data)) lastSentAt = sample.t;
   });
 }

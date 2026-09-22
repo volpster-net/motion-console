@@ -42,6 +42,16 @@
   color: var(--muted);
 }
 
+.aim-debug-slider select {
+  grid-column: 1 / -1;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font: inherit;
+  font-weight: 400;
+}
+
 .aim-debug-slider input {
   grid-column: 1 / -1;
   width: 100%;
