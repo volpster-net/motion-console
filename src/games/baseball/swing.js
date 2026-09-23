@@ -217,3 +217,59 @@ export function createClockMatch(config) {
 export function normalizeSwing(peak, config) {
   return Math.min(1, Math.max(0, (peak - config.weakest) / (config.strongest - config.weakest)));
 }
+
+/**
+ * Learns your natural timing, so a swing that feels on time *is* on time.
+ *
+ * Everyone's swing, phone, and network put the moment we measure a little
+ * earlier or later than the moment it feels like the bat meets the ball. So
+ * the game keeps your last few swings' timing and finds their middle value
+ * (the median: the one in the middle when they're lined up in order, which
+ * a single wild swing can't drag around). That's your personal offset: each
+ * swing is judged against it. Pulling the ball then means swinging earlier
+ * than *you* usually do, just as in real baseball.
+ *
+ * It's saved in the browser, so the next round starts already calibrated.
+ *
+ * @param {{ samples: number, maxMs: number, storageKey: string }} options
+ *   samples: how many recent swings to learn from; maxMs: the most it will
+ *   ever shift timing, either way
+ */
+export function createTimingCalibration({ samples, maxMs, storageKey }) {
+  /** @type {number[]} */
+  let recent = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
+    if (Array.isArray(saved)) recent = saved.filter(Number.isFinite).slice(-samples);
+  } catch {
+    // Storage unreadable: start fresh.
+  }
+
+  const median = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+
+  return {
+    /** How much to shift each swing's timing, ms (0 until we've seen a swing). */
+    get offset() {
+      if (recent.length === 0) return 0;
+      return Math.max(-maxMs, Math.min(maxMs, median(recent)));
+    },
+
+    /**
+     * Learns from a swing.
+     *
+     * @param {number} rawError  the swing's timing before calibration, ms
+     */
+    learn(rawError) {
+      recent = [...recent, rawError].slice(-samples);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(recent));
+      } catch {
+        // Storage blocked: it still works for this visit.
+      }
+    },
+  };
+}

@@ -24,8 +24,10 @@
  * @typedef {typeof import('./index.js').CONFIG} Config
  * @typedef {{ x: number, y: number, z: number }} Vec
  *
+ * @typedef {{ x: number, y: number }} Location  where a pitch crosses the plate (m)
+ *
  * @typedef {{ kind: 'miss', error: number }
- *   | { kind: 'hit', error: number, quality: number, sprayDeg: number, launchDeg: number, speed: number, foul: boolean }} Contact
+ *   | { kind: 'hit', error: number, quality: number, sprayDeg: number, launchDeg: number, speed: number, foul: boolean, location: Location }} Contact
  *   error: swing time minus the ball's arrival at the plate (ms; negative = early)
  *
  * @typedef {object} Flight
@@ -130,7 +132,11 @@ export function choosePitch({ index, count, random, config }) {
   const type = config.pitchTypes[key];
   const { slowest, fastest } = config.pitch.travelMs;
   const progress = count > 1 ? index / (count - 1) : 0;
-  const zone = config.pitch.zone;
+  const { zone } = config.pitch;
+  // Anywhere in the strike zone: inside or outside, high or low.
+  const across = (zone.right - zone.left) * zone.use;
+  const up = (zone.top - zone.bottom) * zone.use;
+  const middle = { x: (zone.left + zone.right) / 2, y: (zone.bottom + zone.top) / 2 };
   return {
     type: key,
     name: type.name,
@@ -139,8 +145,8 @@ export function choosePitch({ index, count, random, config }) {
     path: /** @type {Pitch} */ ({
       start: { ...config.pitch.release },
       target: {
-        x: (random() * 2 - 1) * zone.spread,
-        y: zone.height + (random() * 2 - 1) * zone.spread,
+        x: middle.x + (random() - 0.5) * across,
+        y: middle.y + (random() - 0.5) * up,
         z: 0,
       },
       bend: { ...type.bend },
@@ -149,33 +155,52 @@ export function choosePitch({ index, count, random, config }) {
   };
 }
 
+/** The middle of the strike zone. */
+export const zoneMiddle = (config) => ({
+  x: (config.pitch.zone.left + config.pitch.zone.right) / 2,
+  y: (config.pitch.zone.bottom + config.pitch.zone.top) / 2,
+});
+
 /**
- * Turns a swing's timing (and speed) into what happens to the ball.
+ * Turns a swing's timing (and speed, and where the pitch was) into what
+ * happens to the ball.
+ *
+ * Timing matters most. Where the pitch crossed the plate nudges the result,
+ * like the real game: an inside pitch (nearer you) tends to get pulled to left
+ * field, an outside one pushed to right, a high one lifted, a low one hit lower.
  *
  * @param {number} error  swing time minus the ball's arrival at the plate, ms
  * @param {number} power  swing speed, 0 (weakest) to 1 (strongest)
  * @param {Config} config
+ * @param {Location} [location]  where the pitch crossed the plate (default: the middle)
  * @returns {Contact}
  */
-export function contactFrom(error, power, config) {
+export function contactFrom(error, power, config, location = zoneMiddle(config)) {
   const { windowMs, perfectMs } = config.timing;
-  const { exitSpeed, launchDeg, sprayAtEdgeDeg, foulBeyondDeg, powerBonus } = config.hit;
+  const { exitSpeed, launchDeg, sprayAtEdgeDeg, foulBeyondDeg, powerBonus, locationEffect } =
+    config.hit;
   if (Math.abs(error) > windowMs) return { kind: 'miss', error };
 
   // 1 when dead on (within perfectMs), falling to 0 at the edge of the window.
   const off = Math.max(0, Math.abs(error) - perfectMs) / (windowMs - perfectMs);
   const quality = clamp01(1 - off);
-  // Early (negative error) pulls the ball left; late pushes it right.
-  const sprayDeg = (error / windowMs) * sprayAtEdgeDeg;
+  const middle = zoneMiddle(config);
+  // Early (negative error) pulls the ball left; late pushes it right. Inside
+  // pitches (negative x, nearer a right-handed batter) pull it a little more.
+  const sprayDeg =
+    (error / windowMs) * sprayAtEdgeDeg + (location.x - middle.x) * locationEffect.sprayDegPerM;
   const speed = lerp(exitSpeed.worst, exitSpeed.best, quality) * (1 + (power - 0.5) * powerBonus);
   return {
     kind: 'hit',
     error,
     quality,
     sprayDeg,
-    launchDeg: lerp(launchDeg.worst, launchDeg.best, quality),
+    launchDeg:
+      lerp(launchDeg.worst, launchDeg.best, quality) +
+      (location.y - middle.y) * locationEffect.launchDegPerM,
     speed,
     foul: Math.abs(sprayDeg) > foulBeyondDeg,
+    location,
   };
 }
 
@@ -191,7 +216,7 @@ export function launch(contact, config) {
   const across = toRad(contact.sprayDeg);
   const flat = contact.speed * Math.cos(up);
   return {
-    p: { x: 0, y: config.pitch.zone.height, z: 0.3 },
+    p: { x: contact.location.x, y: contact.location.y, z: 0.3 },
     v: { x: flat * Math.sin(across), y: contact.speed * Math.sin(up), z: flat * Math.cos(across) },
     state: 'flying',
     fair: !contact.foul,

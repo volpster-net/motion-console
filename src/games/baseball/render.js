@@ -354,16 +354,44 @@ export function createRenderer(canvas, config) {
     ctx.restore();
   }
 
-  /** The strike zone: where the ball crosses the plate. Swing when it gets here. */
-  function drawZone() {
-    const { height, spread } = config.pitch.zone;
-    const a = to({ x: -0.25, y: height + spread + 0.2, z: 0 });
-    const b = to({ x: 0.25, y: height - spread - 0.2, z: 0 });
+  /**
+   * The strike zone, standing above home plate like the TV graphic: a faint
+   * box split into nine, and a dot where the last pitch crossed.
+   *
+   * @param {{ x: number, y: number } | null} mark  where the last pitch crossed the plate
+   */
+  function drawZone(mark) {
+    const { left, right, bottom, top } = config.pitch.zone;
+    const a = to({ x: left, y: top, z: 0 });
+    const b = to({ x: right, y: bottom, z: 0 });
+    const w = b.x - a.x;
+    const h = b.y - a.y;
     ctx.save();
-    ctx.setLineDash([6, 6]);
+    ctx.fillStyle = 'rgb(255 255 255 / 0.12)';
+    ctx.fillRect(a.x, a.y, w, h);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgb(255 255 255 / 0.35)';
+    ctx.beginPath();
+    for (const k of [1 / 3, 2 / 3]) {
+      ctx.moveTo(a.x + w * k, a.y);
+      ctx.lineTo(a.x + w * k, a.y + h);
+      ctx.moveTo(a.x, a.y + h * k);
+      ctx.lineTo(a.x + w, a.y + h * k);
+    }
+    ctx.stroke();
     ctx.lineWidth = 2;
     ctx.strokeStyle = COLORS.zone;
-    ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    ctx.strokeRect(a.x, a.y, w, h);
+    if (mark) {
+      const p = to({ ...mark, z: 0 });
+      ctx.fillStyle = '#f2c200';
+      ctx.strokeStyle = '#1d2733';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(4, 0.037 * p.scale * 1.5), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -550,9 +578,10 @@ export function createRenderer(canvas, config) {
      *   flight: import('./field.js').Flight | null,
      *   landings: Array<{ x: number, z: number, kind: 'homer' | 'fair' | 'foul' }>,
      *   batterColor: string,
+     *   zone: { mark: { x: number, y: number } | null } | null,  the strike zone, if shown
      * }} scene
      */
-    draw({ now, pitcher, holdingBall, pitch, pitchT, flight, landings, batterColor }) {
+    draw({ now, pitcher, holdingBall, pitch, pitchT, flight, landings, batterColor, zone }) {
       if (size.height === 0) return;
       // Follow a hit ball: tilt up just enough to keep it below the top bar, smoothly.
       const frameS = lastDrawAt === null ? 0 : Math.min(0.1, (now - lastDrawAt) / 1000);
@@ -563,6 +592,7 @@ export function createRenderer(canvas, config) {
       ctx.clearRect(0, 0, size.width, size.height);
       drawPark(now);
       drawPitcher(pitcher, holdingBall);
+      if (zone) drawZone(zone.mark);
       if (flight) {
         // A home run vanishes into the crowd once it lands in the stands.
         if (!flight.inStands) {
@@ -570,7 +600,6 @@ export function createRenderer(canvas, config) {
           drawBall(flight.p);
         }
       } else if (pitch && pitchT !== null) {
-        if (pitchT < 1.1) drawZone();
         const p = pitchPosition(pitchT, pitch);
         // Past the plate, the ball goes on into the catcher's mitt, just behind you.
         if (p.z > -1.5) drawBall(p);

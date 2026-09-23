@@ -26,6 +26,7 @@ import { createSounds } from './sounds.js';
 import {
   createClockMatch,
   createSwingDetector,
+  createTimingCalibration,
   createVerticalSpin,
   normalizeSwing,
 } from './swing.js';
@@ -55,8 +56,11 @@ export const CONFIG = {
   pitch: {
     /** Where the ball leaves the pitcher's hand (pitcher.js poses him to match). */
     release: { x: -0.35, y: 1.75, z: 17.4 },
-    /** Where pitches cross the plate: around this height, give or take `spread` either way. */
-    zone: { height: 0.85, spread: 0.15 },
+    /**
+     * The strike zone (m): as wide as the plate (17 in), from the knees to
+     * the chest. Pitches cross anywhere within `use` of it (1 = right to the edges).
+     */
+    zone: { left: -0.22, right: 0.22, bottom: 0.5, top: 1.1, use: 0.85 },
     /** A fastball's time from hand to plate: slow at first, quicker by the last pitch. */
     travelMs: { slowest: 880, fastest: 640 },
     /** The first few pitches are all fastballs, to find your timing; then the mix starts. */
@@ -163,6 +167,12 @@ export const CONFIG = {
     windowMs: 240,
     /** Shifts all timing: raise it if swings keep registering late, lower it if early. */
     biasMs: 0,
+    /**
+     * Learning each player's natural timing (swing.js): from their last
+     * `samples` swings, shifting by at most `maxMs`; only swings within
+     * `learnWithinMs` of the timing window count (not wild ones).
+     */
+    calibration: { samples: 5, maxMs: 250, learnWithinMs: 150 },
     /** The quickest a message could possibly reach the console (see swing.js). */
     quickestTripMs: 30,
     /** How long after the ball passes the plate we still wait for a swing's message. */
@@ -181,6 +191,11 @@ export const CONFIG = {
     foulBeyondDeg: 45,
     /** How much swing speed adds or takes away from the exit speed (0.15 = ±7.5%). */
     powerBonus: 0.15,
+    /**
+     * Where the pitch was nudges the hit: degrees of direction per metre
+     * inside/outside, and of launch angle per metre high/low.
+     */
+    locationEffect: { sprayDegPerM: 35, launchDegPerM: 18 },
   },
 
   field: {
@@ -446,6 +461,10 @@ function createSession(container, controller) {
     calmRate: CONFIG.swing.calmRate,
   });
   const clock = createClockMatch(CONFIG.timing);
+  const calibration = createTimingCalibration({
+    ...CONFIG.timing.calibration,
+    storageKey: `motion-console.${id}.timing`,
+  });
   let paused = false;
   let pausedAt = 0;
 
@@ -459,8 +478,13 @@ function createSession(container, controller) {
     const { pitch } = phase;
     if (pitch.stage !== 'pitch' || pitch.contact) return;
 
-    const error = at - pitch.plateAt - CONFIG.timing.biasMs;
-    pitch.contact = contactFrom(error, power, CONFIG);
+    // Judge the swing against your own natural timing (see createTimingCalibration).
+    const raw = at - pitch.plateAt - CONFIG.timing.biasMs;
+    const error = raw - calibration.offset;
+    if (Math.abs(raw) < CONFIG.timing.windowMs + CONFIG.timing.calibration.learnWithinMs) {
+      calibration.learn(raw);
+    }
+    pitch.contact = contactFrom(error, power, CONFIG, pitch.path.target);
     if (pitch.contact.kind === 'miss') {
       sounds.whiff();
       return; // the ball carries on to the catcher; the result shows when it gets there
@@ -472,7 +496,9 @@ function createSession(container, controller) {
     stats.hits += pitch.contact.foul ? 0 : 1;
     sounds.crack(pitch.contact.quality);
     controller.vibrate(player.id, CONFIG.vibration.hit);
-    renderer.text(timingLabel(pitch.contact), now, 'timing');
+    if (Math.abs(pitch.contact.error) <= CONFIG.timing.perfectMs) {
+      renderer.text('Perfect!', now, 'timing');
+    }
   }
 
   /** Plays the batter's swing on screen, once per swing. */
@@ -482,12 +508,6 @@ function createSession(container, controller) {
     if (now - lastAnimatedAt < CONFIG.swing.restMs) return;
     lastAnimatedAt = now;
     renderer.swingBat(now);
-  }
-
-  /** "Perfect!", or "Early · 85 ms" / "Late · 85 ms", so players can learn the timing. */
-  function timingLabel(contact) {
-    if (Math.abs(contact.error) <= CONFIG.timing.perfectMs) return 'Perfect!';
-    return `${contact.error < 0 ? 'Early' : 'Late'} · ${Math.round(Math.abs(contact.error))} ms`;
   }
 
   cleanups.push(
@@ -576,13 +596,7 @@ function createSession(container, controller) {
         pitch.endedAt = now;
         sounds.mitt();
         const swung = pitch.contact?.kind === 'miss';
-        const off = swung ? ` · ${Math.round(Math.abs(pitch.contact.error))} ms` : '';
-        const label = !swung
-          ? 'Watched it go by'
-          : pitch.contact.error < 0
-            ? `Too early${off}`
-            : `Too late${off}`;
-        renderer.text(swung ? `Swing and a miss! ${label}` : label, now, 'miss');
+        renderer.text(swung ? 'Swing and a miss!' : 'Watched it go by', now, 'miss');
         const player = activePlayer();
         if (swung && player) controller.vibrate(player.id, CONFIG.vibration.miss);
       }
@@ -649,6 +663,16 @@ function createSession(container, controller) {
       flight: pitch?.flight ?? null,
       landings: stats.landings,
       batterColor: playerColor(player?.slot ?? 1),
+      // The strike zone during play, marking where the pitch crossed once it has.
+      zone:
+        phase.name === 'batting'
+          ? {
+              mark:
+                pitch && pitch.stage !== 'windup' && now >= pitch.plateAt
+                  ? pitch.path.target
+                  : null,
+            }
+          : null,
     });
 
     const pitchNumber = pitch ? Math.min(pitch.index + 1, CONFIG.round.pitches) : null;

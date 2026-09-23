@@ -300,8 +300,13 @@ you can.
 
 - **Timing is everything.** Within about 90 ms of perfect is a home run. Early pulls the ball to
   left field, late pushes it to right; beyond about 180 ms it goes foul, and beyond 240 ms it's a
-  swing and a miss. Every swing tells you how far off you were ("Late · 85 ms"), so you can learn
-  it. Swing speed adds a little distance. The ball flies with gravity and air resistance.
+  swing and a miss. A truly on-time swing gets a "Perfect!". Swing speed adds a little distance.
+- **It learns your timing.** Everyone's swing, phone, and network register a little early or late,
+  so the game keeps the middle value of your last five swings and judges each swing against it
+  (saved in the browser). Pulling the ball means swinging earlier than _you_ usually do.
+- **Pitch location**: pitches cross anywhere in the strike zone, shown above the plate like the TV
+  graphic, with a dot marking where each one crossed. Location nudges the hit, like the real game:
+  inside pitches get pulled, outside ones pushed, high ones lifted, low ones hit lower.
 - **A real ballpark**, in feet: the fence is 330 ft down the lines and 400 ft to centre, so pulled
   home runs are easier, like the real thing. The stands behind it are full of fans (randomised
   shirts and skin tones), who jump up and cheer when you hit one out; a home run disappears into

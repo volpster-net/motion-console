@@ -3,6 +3,7 @@ import { CONFIG } from './index.js';
 import {
   createClockMatch,
   createSwingDetector,
+  createTimingCalibration,
   createVerticalSpin,
   normalizeSwing,
   spinSpeed,
@@ -112,5 +113,34 @@ describe('normalizeSwing', () => {
     expect(normalizeSwing(config.weakest, config)).toBe(0);
     expect(normalizeSwing(config.strongest, config)).toBe(1);
     expect(normalizeSwing(config.strongest * 3, config)).toBe(1);
+  });
+});
+
+describe('createTimingCalibration', () => {
+  const make = () =>
+    createTimingCalibration({ samples: 5, maxMs: 250, storageKey: `test-${Math.random()}` });
+
+  it('starts with no shift', () => {
+    expect(make().offset).toBe(0);
+  });
+
+  it('shifts timing to the middle of your recent swings', () => {
+    const calibration = make();
+    for (const error of [-150, -130, -170]) calibration.learn(error);
+    expect(calibration.offset).toBe(-150);
+  });
+
+  it('is not thrown off by one wild swing', () => {
+    const calibration = make();
+    for (const error of [-150, -140, -160, 400]) calibration.learn(error);
+    expect(calibration.offset).toBe(-145);
+  });
+
+  it('only remembers the last few swings, and never shifts too far', () => {
+    const calibration = make();
+    for (const error of [-600, -600, -600, -600, -600]) calibration.learn(error);
+    expect(calibration.offset).toBe(-250);
+    for (const error of [0, 0, 0]) calibration.learn(error);
+    expect(calibration.offset).toBe(0);
   });
 });

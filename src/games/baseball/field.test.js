@@ -163,6 +163,33 @@ describe('project', () => {
   });
 });
 
+describe('pitch location', () => {
+  const middle = { x: 0, y: (CONFIG.pitch.zone.bottom + CONFIG.pitch.zone.top) / 2 };
+
+  it('lands every pitch inside the strike zone', () => {
+    const { left, right, bottom, top } = CONFIG.pitch.zone;
+    for (let i = 0; i < 50; i++) {
+      const { path } = choosePitch({
+        index: i % 10,
+        count: 10,
+        random: Math.random,
+        config: CONFIG,
+      });
+      expect(path.target.x).toBeGreaterThanOrEqual(left);
+      expect(path.target.x).toBeLessThanOrEqual(right);
+      expect(path.target.y).toBeGreaterThanOrEqual(bottom);
+      expect(path.target.y).toBeLessThanOrEqual(top);
+    }
+  });
+
+  it('pulls inside pitches and lifts high ones, a little', () => {
+    const at = (location) => contactFrom(0, 0.5, CONFIG, location);
+    expect(at({ ...middle, x: -0.2 }).sprayDeg).toBeLessThan(at(middle).sprayDeg);
+    expect(at({ ...middle, x: 0.2 }).sprayDeg).toBeGreaterThan(at(middle).sprayDeg);
+    expect(at({ ...middle, y: middle.y + 0.25 }).launchDeg).toBeGreaterThan(at(middle).launchDeg);
+  });
+});
+
 describe('difficulty', () => {
   const fly = (error) => flyToEnd(contactFrom(error, 0.5, CONFIG), CONFIG);
 
