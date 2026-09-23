@@ -5,10 +5,25 @@
  * ---------
  * A bat swing is the biggest, fastest motion you can make with a phone, so
  * it's easy to spot: we watch the gyroscope's total spin speed (all three
- * axes combined, so it works however you grip the phone). A swing starts when
- * that speed shoots past `startRate`, and is reported as soon as it has
- * clearly peaked (dropped well below its fastest) or slowed right down. The
- * moment of fastest spin is when the bat would meet the ball.
+ * axes combined, so it works however you grip the phone). A burst of spin
+ * starts when that speed shoots past `startRate`, and ends once it has clearly
+ * peaked (dropped well below its fastest) or slowed right down. The moment of
+ * fastest spin is when the bat would meet the ball.
+ *
+ * The load: a real swing starts by cocking the bat back, and with a phone in
+ * your hands that's a quick burst of spin too. It comes just before the swing,
+ * with a dip in between as the phone changes direction. So after each burst
+ * we wait a moment (`settleMs`) to see whether a stronger one follows. The
+ * strongest burst is the swing; anything weaker before it was the load.
+ *
+ *   speed
+ *     ▲              swing ← this one counts
+ *     │   load        ╱╲
+ *     │    ╱╲        ╱  ╲
+ *     │───╱──╲──────╱────╲───── startRate
+ *     │  ╱    ╲____╱      ╲
+ *     └─────────────────────────▶ time
+ *                            └ settleMs ┘ then report
  *
  * The timing
  * ----------
@@ -27,8 +42,12 @@
 
 /**
  * @typedef {typeof import('./index.js').CONFIG['swing']} SwingConfig
- * @typedef {{ t: number, peak: number }} Swing
- *   t: when the swing was fastest (phone clock, ms); peak: that speed (°/s)
+ * @typedef {{ t: number, peak: number }} Burst
+ *   t: when it was fastest (phone clock, ms); peak: that speed (°/s)
+ * @typedef {{ type: 'burst' | 'swing' } & Burst} SwingEvent
+ *   burst: a burst of spin just ended; it might be the load, or the swing
+ *          (good for starting the batter's animation straight away)
+ *   swing: the settled answer: the strongest burst, which is the swing
  */
 
 /** Total spin speed, however the phone is held: Pythagoras across all three axes. */
@@ -42,39 +61,52 @@ export function spinSpeed({ alpha, beta, gamma }) {
 export function createSwingDetector(config) {
   /**
    * @type {{ stage: 'waiting' }
-   *   | { stage: 'swinging', since: number, peak: number, peakAt: number }
+   *   | { stage: 'swinging', since: number, peak: number, peakAt: number, best: Burst | null }
+   *   | { stage: 'settling', best: Burst, until: number }
    *   | { stage: 'resting', until: number }}
    */
   let state = { stage: 'waiting' };
 
   return {
     /**
-     * Feeds one sample. Returns a swing once it's finished.
+     * Feeds one sample. Returns an event when a burst ends or a swing is settled.
      *
      * @param {number} speed  total spin speed, °/s
      * @param {number} t      phone timestamp, ms
-     * @returns {Swing | null}
+     * @returns {SwingEvent | null}
      */
     update(speed, t) {
       if (state.stage === 'resting') {
         if (t < state.until) return null;
         state = { stage: 'waiting' };
       }
-      if (state.stage === 'waiting') {
-        if (speed >= config.startRate)
-          state = { stage: 'swinging', since: t, peak: speed, peakAt: t };
+      if (state.stage === 'waiting' || state.stage === 'settling') {
+        if (speed >= config.startRate) {
+          const best = state.stage === 'settling' ? state.best : null;
+          state = { stage: 'swinging', since: t, peak: speed, peakAt: t, best };
+          return null;
+        }
+        if (state.stage === 'settling' && t >= state.until) {
+          // No stronger burst came: this was the swing.
+          const swing = state.best;
+          state = { stage: 'resting', until: t + config.restMs };
+          return { type: 'swing', ...swing };
+        }
         return null;
       }
+
+      // Swinging: follow the burst to its fastest point.
       if (speed > state.peak) {
         state.peak = speed;
         state.peakAt = t;
       }
       const pastPeak = speed < state.peak * config.pastPeak;
       if (pastPeak || speed < config.endRate || t - state.since > config.maxMs) {
-        const swing = { t: state.peakAt, peak: state.peak };
-        // Ignore the follow-through and resetting the bat.
-        state = { stage: 'resting', until: t + config.restMs };
-        return swing;
+        const burst = { t: state.peakAt, peak: state.peak };
+        // Keep the strongest burst so far, and wait to see if a stronger one follows.
+        const best = state.best && state.best.peak >= burst.peak ? state.best : burst;
+        state = { stage: 'settling', best, until: t + config.settleMs };
+        return { type: 'burst', ...burst };
       }
       return null;
     },

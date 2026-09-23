@@ -18,9 +18,9 @@ describe('the swing', () => {
     }
   });
 
-  it('has the bat level and pointing at the plate at contact', () => {
+  it('has the bat level and out over the plate at contact', () => {
     const pose = swingPose(CONTACT_AT);
-    expect(Math.abs(batYaw(pose))).toBeLessThan(5);
+    expect(Math.abs(batYaw(pose))).toBeLessThan(15);
     expect(Math.abs(pose.batTip[1] - pose.hands[1])).toBeLessThan(0.1);
   });
 

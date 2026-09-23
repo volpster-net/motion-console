@@ -132,7 +132,12 @@ export const CONFIG = {
     pastPeak: 0.6,
     /** A swing can't last longer than this. */
     maxMs: 400,
-    /** Ignore the follow-through and getting set again. */
+    /**
+     * After a burst of spin, wait this long for a stronger one: the first is
+     * often the load (cocking the bat back), and the stronger one the swing.
+     */
+    settleMs: 300,
+    /** After a swing, ignore the follow-through and getting set again. */
     restMs: 700,
     /** Swing speeds that count as the weakest (0) and strongest (1). */
     weakest: 500,
@@ -149,8 +154,11 @@ export const CONFIG = {
     biasMs: 0,
     /** The quickest a message could possibly reach the console (see swing.js). */
     quickestTripMs: 30,
-    /** How long after the ball passes the plate we still wait for a swing's message. */
-    lateGraceMs: 350,
+    /**
+     * How long after the ball passes the plate we still wait for a swing's
+     * message (it's settled a moment after the swing; see swing.js).
+     */
+    lateGraceMs: 600,
   },
 
   /** What a hit does, from dead on (best) to barely touched (worst). */
@@ -431,12 +439,10 @@ function createSession(container, controller) {
 
   /**
    * A swing, at `at` on the console's clock, with `power` from 0 to 1.
-   * The bat always swings on screen; it only counts once per pitch, while
-   * the ball is on its way.
+   * It only counts once per pitch, while the ball is on its way.
    */
   function swingAt(at, power, player) {
     const now = performance.now();
-    renderer.swingBat(now);
     if (phase.name !== 'batting') return;
     const { pitch } = phase;
     if (pitch.stage !== 'pitch' || pitch.contact) return;
@@ -457,6 +463,21 @@ function createSession(container, controller) {
     renderer.text(timingLabel(pitch.contact), now, 'timing');
   }
 
+  /** Is the ball on its way, and a swing at `at` not hopelessly early for it? */
+  function couldReachBall(at) {
+    if (phase.name !== 'batting' || phase.pitch.stage !== 'pitch') return false;
+    return at - phase.pitch.plateAt >= -CONFIG.timing.windowMs;
+  }
+
+  /** Plays the batter's swing on screen, once per swing. */
+  let lastAnimatedAt = -Infinity;
+  function animateSwing() {
+    const now = performance.now();
+    if (now - lastAnimatedAt < CONFIG.swing.settleMs + 300) return;
+    lastAnimatedAt = now;
+    renderer.swingBat(now);
+  }
+
   /** "Perfect!", or "Early · 85 ms" / "Late · 85 ms", so players can learn the timing. */
   function timingLabel(contact) {
     if (Math.abs(contact.error) <= CONFIG.timing.perfectMs) return 'Perfect!';
@@ -468,9 +489,18 @@ function createSession(container, controller) {
       if (paused || player.id !== activePlayer()?.id) return;
       const { alpha, beta, gamma, t } = /** @type {any} */ (sample);
       clock.observe(t, performance.now());
-      const swing = detector.update(spinSpeed({ alpha, beta, gamma }), t);
-      if (swing)
-        swingAt(clock.toConsole(swing.t), normalizeSwing(swing.peak, CONFIG.swing), player);
+      const event = detector.update(spinSpeed({ alpha, beta, gamma }), t);
+      if (!event) return;
+      const at = clock.toConsole(event.t);
+      if (event.type === 'burst') {
+        // Start the batter's swing straight away if this burst could reach the
+        // ball. (A burst long before the pitch arrives is probably the load.)
+        if (couldReachBall(at)) animateSwing();
+      } else {
+        // The settled swing: the one that counts.
+        animateSwing();
+        swingAt(at, normalizeSwing(event.peak, CONFIG.swing), player);
+      }
     }),
     controller.onInput(INPUT.BUTTON, ({ id: button, down }, { player }) => {
       if (paused || !down || button !== BUTTONS.FIRE || player.id !== activePlayer()?.id) return;
@@ -480,7 +510,10 @@ function createSession(container, controller) {
         return startCountdown(now);
       }
       // No gyroscope? Then Fire swings, timed by when the press arrived.
-      if (!clock.ready) swingAt(now - CONFIG.timing.quickestTripMs, 0.5, player);
+      if (!clock.ready) {
+        animateSwing();
+        swingAt(now - CONFIG.timing.quickestTripMs, 0.5, player);
+      }
     }),
     controller.players.onChange(() => {
       if (phase.name === 'title') showTitle();

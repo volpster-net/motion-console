@@ -19,10 +19,21 @@ describe('spinSpeed', () => {
 });
 
 describe('createSwingDetector', () => {
-  it('reports a swing at its fastest moment', () => {
+  /** The settled swings (not the in-between bursts) from a run of speeds, 16 ms apart. */
+  const swingsFrom = (detector, speeds, startT = 0) =>
+    feed(
+      detector,
+      [...speeds, ...Array(Math.ceil(config.settleMs / 16) + 2).fill(0)],
+      startT,
+    ).filter((event) => event.type === 'swing');
+
+  it('reports a swing at its fastest moment, once it has settled', () => {
     const detector = createSwingDetector(config);
-    const swings = feed(detector, [0, 100, 600, 1400, 1800, 1200, 500, 80]);
-    expect(swings).toEqual([{ t: 64, peak: 1800 }]);
+    const events = feed(detector, [0, 100, 600, 1400, 1800, 1200, 500, 80]);
+    expect(events).toEqual([{ type: 'burst', t: 64, peak: 1800 }]);
+    expect(
+      swingsFrom(createSwingDetector(config), [0, 100, 600, 1400, 1800, 1200, 500, 80]),
+    ).toEqual([{ type: 'swing', t: 64, peak: 1800 }]);
   });
 
   it('ignores adjusting your grip or wiggling the phone', () => {
@@ -30,18 +41,27 @@ describe('createSwingDetector', () => {
     expect(feed(detector, [50, 150, 300, 200, 90, 250, 60])).toEqual([]);
   });
 
+  it('ignores the load: a weaker burst just before the swing', () => {
+    const detector = createSwingDetector(config);
+    const load = [300, 700, 900, 500, 100];
+    const pause = [40, 30];
+    const swing = [800, 1600, 2100, 1300, 400, 60];
+    const swings = swingsFrom(detector, [...load, ...pause, ...swing]);
+    expect(swings).toHaveLength(1);
+    expect(swings[0].peak).toBe(2100);
+    expect(swings[0].t).toBe((load.length + pause.length + 2) * 16);
+  });
+
   it('counts one swing, not the follow-through', () => {
     const detector = createSwingDetector(config);
     const swing = [700, 1500, 900, 100];
     const followThrough = [800, 1200, 100];
-    expect(feed(detector, [...swing, ...followThrough])).toHaveLength(1);
-    const later = config.restMs + 200;
-    expect(feed(detector, swing, later)).toHaveLength(1);
+    expect(swingsFrom(detector, [...swing, ...followThrough])).toHaveLength(1);
   });
 
   it('ends a swing that never slows down', () => {
     const detector = createSwingDetector(config);
-    expect(feed(detector, Array(60).fill(900))).toHaveLength(1);
+    expect(swingsFrom(detector, Array(40).fill(900))).toHaveLength(1);
   });
 });
 

@@ -564,8 +564,11 @@ export function createRenderer(canvas, config) {
       drawPark(now);
       drawPitcher(pitcher, holdingBall);
       if (flight) {
-        drawTrail(flight.trail);
-        drawBall(flight.p);
+        // A home run vanishes into the crowd once it lands in the stands.
+        if (!flight.inStands) {
+          drawTrail(flight.trail);
+          drawBall(flight.p);
+        }
       } else if (pitch && pitchT !== null) {
         if (pitchT < 1.1) drawZone();
         const p = pitchPosition(pitchT, pitch);

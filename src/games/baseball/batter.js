@@ -39,92 +39,101 @@ export const CONTACT_AT = 0.45;
 const BAT = 0.84;
 
 /**
- * Key values of the swing's controls, plus the legs and head.
+ * Key values of the swing's controls, plus the legs and head, modelled on a
+ * real swing sequence (stance, stride, contact, extension, follow-through).
  * Values not listed carry over from the previous key.
  */
 const KEYS = fillIn([
   {
-    // Stance: facing the plate, knees soft, hands up by the back shoulder,
-    // bat up and angled back over the shoulder.
+    // Stance: feet wide, knees bent, hands up by the back ear, the bat
+    // nearly upright, tipped slightly back.
     at: 0,
     hipTurn: 0,
+    shoulderTurn: -8,
+    chest: [0.04, 1.36, -0.02],
+    head: [0.1, 1.64, 0.08],
+    hands: [-0.08, 1.58, -0.22],
+    batYaw: -150,
+    batTilt: 75,
+    lKnee: [0.16, 0.5, 0.34],
+    lFoot: [0.02, 0.02, 0.4],
+    rKnee: [0.12, 0.5, -0.34],
+    rFoot: [0, 0.02, -0.4],
+  },
+  {
+    // Stride: the front foot reaches towards the pitcher and lands, hips and
+    // shoulders coil back, hands stay back at shoulder height, and the bat
+    // lays back almost flat, pointing towards the catcher.
+    at: 0.3,
+    hipTurn: -10,
+    shoulderTurn: -22,
+    hands: [-0.12, 1.45, -0.32],
+    batYaw: -165,
+    batTilt: 12,
+    lKnee: [0.14, 0.5, 0.46],
+    lFoot: [0.04, 0.02, 0.52],
+  },
+  {
+    // Launch: the hips fire open first, the hands start forwards, and the bat
+    // stays flat as it comes round.
+    at: 0.38,
+    hipTurn: 20,
     shoulderTurn: -5,
-    chest: [0.05, 1.38, 0],
-    head: [0.1, 1.66, 0.06],
-    hands: [-0.02, 1.5, -0.24],
-    batYaw: -115,
-    batTilt: 62,
-    lKnee: [0.14, 0.52, 0.32],
-    lFoot: [0.04, 0.02, 0.38],
-    rKnee: [0.1, 0.52, -0.32],
-    rFoot: [0, 0.02, -0.38],
+    chest: [0.05, 1.33, 0],
+    hands: [-0.02, 1.3, -0.25],
+    batYaw: -120,
+    batTilt: 5,
   },
   {
-    // Load: hips and shoulders coil back, hands drift back, front foot strides.
-    at: 0.25,
-    hipTurn: -8,
-    shoulderTurn: -18,
-    hands: [-0.1, 1.52, -0.32],
-    batYaw: -128,
-    batTilt: 55,
-    lKnee: [0.14, 0.6, 0.4],
-    lFoot: [0.05, 0.1, 0.48],
-  },
-  {
-    // Launch: front foot down, hips start to open, the bat drops into the slot.
-    at: 0.36,
-    hipTurn: 15,
-    shoulderTurn: -5,
-    hands: [-0.02, 1.35, -0.28],
-    batYaw: -95,
-    batTilt: 35,
-    lKnee: [0.12, 0.5, 0.45],
-    lFoot: [0.05, 0.02, 0.5],
-  },
-  {
-    // Contact: hips well open, shoulders following, hands out front, the bat
-    // level and pointing at the plate.
+    // Contact: front leg firm, back knee driving in with the heel up, hips
+    // open, arms extending, head down on the ball, and the bat level out
+    // front over the plate.
     at: CONTACT_AT,
-    hipTurn: 45,
-    shoulderTurn: 30,
-    chest: [0.07, 1.36, 0.02],
-    head: [0.12, 1.62, 0.08],
-    hands: [0.3, 1.05, -0.02],
-    batYaw: 0,
-    batTilt: -4,
-    rKnee: [0.2, 0.48, -0.25],
-    rFoot: [0.02, 0.06, -0.38],
+    hipTurn: 55,
+    shoulderTurn: 35,
+    chest: [0.03, 1.32, 0],
+    head: [0.1, 1.58, 0.06],
+    hands: [0.32, 1.05, 0.02],
+    batYaw: 10,
+    batTilt: -6,
+    lKnee: [0.07, 0.5, 0.47],
+    rKnee: [0.22, 0.42, -0.2],
+    rFoot: [0.04, 0.08, -0.4],
   },
   {
-    // Extension: arms long, the bat carrying on round towards left field.
+    // Extension: arms reach out towards the pitcher, the bat rising as it
+    // carries on round.
     at: 0.6,
-    hipTurn: 75,
-    shoulderTurn: 75,
-    hands: [0.4, 1.15, 0.28],
-    batYaw: 75,
-    batTilt: 14,
-  },
-  {
-    // Follow-through: chest facing the pitcher, hands over the front
-    // shoulder, the bat wrapped round behind, back foot up on its toe.
-    at: 0.85,
-    hipTurn: 90,
-    shoulderTurn: 105,
-    chest: [0.03, 1.38, 0.05],
-    head: [0.07, 1.64, 0.12],
-    hands: [0.02, 1.52, 0.26],
-    batYaw: 160,
+    hipTurn: 85,
+    shoulderTurn: 85,
+    chest: [0.04, 1.35, 0.06],
+    head: [0.08, 1.6, 0.1],
+    hands: [0.45, 1.3, 0.35],
+    batYaw: 60,
     batTilt: 30,
-    rKnee: [0.12, 0.5, -0.15],
-    rFoot: [0.05, 0.08, -0.32],
   },
   {
-    // Settling at the end of the follow-through.
-    at: 1,
-    shoulderTurn: 108,
-    hands: [0, 1.54, 0.26],
+    // Follow-through: chest facing the pitcher, hands up by the front
+    // shoulder, the bat wrapped flat round behind the neck, back foot up on
+    // its toe.
+    at: 0.82,
+    hipTurn: 95,
+    shoulderTurn: 120,
+    chest: [0.03, 1.38, 0.05],
+    head: [0.08, 1.62, 0.14],
+    hands: [0.02, 1.5, 0.28],
     batYaw: 170,
-    batTilt: 33,
+    batTilt: 8,
+    rKnee: [0.14, 0.5, -0.12],
+    rFoot: [0.06, 0.1, -0.3],
+  },
+  {
+    // Settling: the bat dropping a little behind the back.
+    at: 1,
+    shoulderTurn: 118,
+    hands: [0.05, 1.45, 0.25],
+    batYaw: 180,
+    batTilt: -5,
   },
 ]);
 
