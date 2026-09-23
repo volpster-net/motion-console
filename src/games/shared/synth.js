@@ -8,6 +8,8 @@
  * - A *noise burst*: a split second of random static, run through a filter
  *   to sound like a "pff", a "tss", or a "whoosh".
  *
+ * It can also play recorded sounds (`load` a file, then `play` it).
+ *
  * Browsers only let a page make sound after someone clicks or presses a key
  * *on that page*. Phone buttons don't count, because they happen on a
  * different device. So sound starts switched off, and `unlock()` must be
@@ -127,6 +129,44 @@ export function createSynth({ volume }) {
       source.stop(start + duration + 0.02);
     },
 
+    /**
+     * Loads a recorded sound (an audio file's URL), ready to `play`.
+     * Resolves to null if it can't be loaded, so callers can fall back.
+     *
+     * @param {string} url
+     * @returns {Promise<AudioBuffer | null>}
+     */
+    async load(url) {
+      try {
+        const response = await fetch(url);
+        return await context.decodeAudioData(await response.arrayBuffer());
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Plays a recorded sound once.
+     *
+     * @param {AudioBuffer} sound  from `load`
+     * @param {{
+     *   gain?: number,   loudness, 0 to 1 (or more to boost)
+     *   rate?: number,   playback speed: below 1 is slower and lower, above 1 quicker and higher
+     *   delay?: number,  seconds from now
+     * }} [options]
+     */
+    play(sound, { gain = 1, rate = 1, delay = 0 } = {}) {
+      if (!ready() || !sound) return;
+      const start = context.currentTime + delay;
+      const source = context.createBufferSource();
+      source.buffer = sound;
+      source.playbackRate.value = rate;
+      const level = context.createGain();
+      level.gain.value = gain;
+      source.connect(level).connect(master);
+      source.start(start);
+    },
+
     /** Releases the audio hardware. Nothing plays after this. */
     close() {
       context.close().catch(() => {});
@@ -143,6 +183,8 @@ function silentSynth() {
     onChange: nothing,
     tone: nothing,
     noise: nothing,
+    load: () => Promise.resolve(null),
+    play: nothing,
     close: nothing,
   };
 }

@@ -1,8 +1,10 @@
 /**
  * Home Run Derby's sound effects, made with the shared synthesizer
- * (src/games/shared/synth.js explains how tones and noise bursts work).
+ * (src/games/shared/synth.js explains how tones and noise bursts work),
+ * plus one recording: the crack of the bat (audio/bat-crack.mp3).
  */
 import { createSynth, NOTE } from '../shared/synth.js';
+import batCrackUrl from './audio/bat-crack.mp3';
 
 /**
  * @param {{ volume: number }} options  0 to 1
@@ -10,6 +12,9 @@ import { createSynth, NOTE } from '../shared/synth.js';
 export function createSounds({ volume }) {
   const synth = createSynth({ volume });
   const { tone, noise } = synth;
+  /** The recorded crack of the bat, once it has loaded. */
+  let batCrack = null;
+  synth.load(batCrackUrl).then((sound) => (batCrack = sound));
 
   return {
     get enabled() {
@@ -25,8 +30,8 @@ export function createSounds({ volume }) {
     },
 
     /**
-     * Bat on ball: the crack of a wooden bat, matched to recordings of real
-     * wood bats. A real crack is over in a flash (about a hundredth of a
+     * Bat on ball: the crack of a wooden bat. Plays the recording; the
+     * synthesized crack below is matched to recordings of real wood bats. A real crack is over in a flash (about a hundredth of a
      * second), has almost no bass, and is a bright click centred around
      * 1,500 Hz, followed by the bat ringing briefly at about 1,700 Hz.
      * (Checked by measuring recordings of real bats against this one.)
@@ -37,6 +42,15 @@ export function createSounds({ volume }) {
      */
     crack(quality) {
       const q = Math.min(1, Math.max(0, quality));
+      if (batCrack) {
+        // The recording: full and bright for a dead-on hit; quieter and a touch
+        // lower and duller for a poor one. A tiny random change in speed means
+        // no two hits sound exactly alike.
+        const rate = 0.9 + q * 0.1 + (Math.random() - 0.5) * 0.04;
+        synth.play(batCrack, { gain: 0.45 + q * 0.55, rate });
+        return;
+      }
+      // Until the recording has loaded, a synthesized crack stands in.
       // The click: very short bursts of static, spread from about 600 to
       // 5,000 Hz like a real crack, loudest around 1,000 to 2,000 Hz.
       noise({
