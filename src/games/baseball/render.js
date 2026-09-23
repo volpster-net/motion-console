@@ -3,11 +3,10 @@
  * the pitcher, your batter, the ball, and a small top-down map of where hits
  * land. Every frame is drawn from scratch; far things first, near things last.
  */
-import { createBatterModel } from './batter-model.js';
 import { CONTACT_AT, createBatter } from './batter.js';
 import { fenceAt, pitchPosition, project, seatsHeight, toFeet } from './field.js';
-import { drawFigure } from './figure.js';
 import { pitcherPose } from './pitcher.js';
+import { createPlayers } from './players.js';
 
 /** How long the bat's swoosh lingers, ms. */
 const TRAIL_MS = 80;
@@ -27,10 +26,6 @@ const COLORS = {
   lines: '#ffffff',
   base: '#ffffff',
   pitcherJersey: '#c8373c',
-  pitcherCap: '#8e1f24',
-  pants: '#f3f4f6',
-  skin: '#e8b48c',
-  glove: '#8a5a2b',
   ball: '#ffffff',
   seam: '#e5484d',
   shadow: 'rgb(0 0 0 / 0.22)',
@@ -48,7 +43,15 @@ export function createRenderer(canvas, config) {
   /** The fence's distance (m) at an angle, in degrees out from home plate. */
   const fence = (angleDeg) => fenceAt(angleDeg, config);
   const batter = createBatter(config.batter);
-  const batterModel = createBatterModel();
+  const players = createPlayers();
+  /** The screen and camera, as the 3D players need them. */
+  const view = () => ({
+    width: size.width,
+    height: size.height,
+    ratio: window.devicePixelRatio || 1,
+    camera: config.field.camera,
+    lift,
+  });
   let size = { width: 0, height: 0 };
   /** @type {Array<{ text: string, at: number, kind: keyof typeof COLORS.text }>} */
   let texts = [];
@@ -300,29 +303,26 @@ export function createRenderer(canvas, config) {
    */
   function drawPitcher(progress, holdingBall) {
     const pose = pitcherPose(progress);
-    const feet = to({ x: 0, y: 0, z: /** @type {number} */ (pose.z) });
-    const s = feet.scale;
-    const place = ([x, y]) => ({ x: feet.x + x * s, y: feet.y - y * s });
-    drawFigure(ctx, pose, place, s, {
-      jersey: COLORS.pitcherJersey,
-      pants: COLORS.pants,
-      skin: COLORS.skin,
-      cap: COLORS.pitcherCap,
-      glove: COLORS.glove,
-      frontArm: 'right',
-    });
-    if (holdingBall) {
-      const hand = place(/** @type {[number, number]} */ (pose.rHand));
-      ctx.fillStyle = COLORS.ball;
+    shadowsUnder(pose, (p) => to({ x: p[0], y: 0, z: p[2] }));
+    players.drawPitcher(ctx, view(), { pose, color: COLORS.pitcherJersey, holdingBall });
+  }
+
+  /** A soft shadow on the dirt under each of a player's feet. */
+  function shadowsUnder(pose, onGround) {
+    ctx.fillStyle = COLORS.shadow;
+    for (const side of ['l', 'r']) {
+      const heel = pose[`${side}Heel`];
+      const toe = pose[`${side}Toe`];
+      const under = onGround([(heel[0] + toe[0]) / 2, 0, (heel[2] + toe[2]) / 2]);
       ctx.beginPath();
-      ctx.arc(hand.x, hand.y, Math.max(2, 0.05 * s), 0, Math.PI * 2);
+      ctx.ellipse(under.x, under.y, 0.2 * under.scale, 0.05 * under.scale, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
   /**
    * Your batter, in the left-hand batter's box, in your player colour
-   * (batter.js has the swing, batter-model.js is the 3D player). He stands in
+   * (batter.js has the swing, players.js is the 3D player). He stands in
    * the same 3D ballpark, seen through the same camera as everything else.
    *
    * @param {number} now
@@ -343,25 +343,8 @@ export function createRenderer(canvas, config) {
     const sinceSwing = now - batSwungAt;
     const pose = batter.pose(sinceSwing, now, ball, load);
     const place = (p) => to({ x: stands.x + p[0], y: p[1], z: stands.z + p[2] });
-    // A soft shadow on the dirt under each foot.
-    ctx.fillStyle = COLORS.shadow;
-    for (const side of ['l', 'r']) {
-      const heel = pose[`${side}Heel`];
-      const toe = pose[`${side}Toe`];
-      const under = place([(heel[0] + toe[0]) / 2, 0, (heel[2] + toe[2]) / 2]);
-      ctx.beginPath();
-      ctx.ellipse(under.x, under.y, 0.2 * under.scale, 0.05 * under.scale, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    batterModel.draw(ctx, pose, {
-      width: size.width,
-      height: size.height,
-      ratio: window.devicePixelRatio || 1,
-      stands,
-      camera: config.field.camera,
-      lift,
-      jersey: color,
-    });
+    shadowsUnder(pose, place);
+    players.drawBatter(ctx, view(), { pose, stands, color });
     // Remember where the bat has just been while he swings, for the swoosh
     // behind it: only while it sweeps across the plate through contact (when
     // it points towards or away from us, a swoosh would just be a smear).

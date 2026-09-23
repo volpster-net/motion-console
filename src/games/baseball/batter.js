@@ -1,7 +1,7 @@
 /**
  * Your batter's stance and swing, in 3D, the Wii Sports way: a chunky,
  * cartoon ballplayer (big head, short body, slim arms and legs) with a big
- * snappy swing. batter-model.js draws him.
+ * snappy swing. players.js draws him.
  *
  * Positions are in metres around the spot where he stands:
  *
@@ -36,6 +36,25 @@
  * through it, fading back to the normal swing either side.
  */
 
+import {
+  BODY,
+  add,
+  bend,
+  clamp,
+  cross,
+  dot,
+  facing,
+  keyPoses,
+  leftSide,
+  length,
+  mix,
+  mul,
+  sub,
+  toRad,
+  turn,
+  unit,
+} from './body.js';
+
 /** The moment in the swing (0 to 1) when the bat meets the ball. */
 export const CONTACT_AT = 0.45;
 
@@ -48,27 +67,13 @@ export const BAT = 0.95;
 /** Where the top hand holds the bat, measured from the knob. */
 export const GRIP = 0.16;
 
-/** His body: the sizes of a chunky cartoon ballplayer, metres. */
-export const BODY = {
-  hipHeight: 0.6,
-  hipWidth: 0.2,
-  torso: 0.4,
-  shoulderWidth: 0.34,
-  headAbove: 0.27,
-  headRadius: 0.19,
-  upperArm: 0.2,
-  foreArm: 0.2,
-  thigh: 0.29,
-  shin: 0.28,
-};
-
 /** How far along the bat (from the top hand) the ball is met: the sweet spot. */
 const SWEET_SPOT = 0.55;
 
 /**
  * The swing's key moments. Values not listed carry over from the previous key.
  */
-const KEYS = fillIn([
+const controlsAt = keyPoses([
   {
     // Stance: upright, turned a little away so we see his back, hands
     // together at shoulder height out beside his head, the bat leaning back
@@ -147,46 +152,7 @@ const KEYS = fillIn([
   },
 ]);
 
-/** Fills in each key from the ones before it, so keys only list what changes. */
-function fillIn(keys) {
-  let previous = {};
-  return keys.map((key) => (previous = { ...previous, ...key }));
-}
-
-const CONTROLS = Object.keys(KEYS[0]).filter((key) => key !== 'at');
-
-/**
- * A smooth curve through the keys (a cubic Hermite spline): at each key, the
- * value keeps moving at the average speed of the stretches either side, so
- * nothing stops dead at a key.
- */
-function glide(name, t) {
-  const n = KEYS.length;
-  if (t <= KEYS[0].at) return KEYS[0][name];
-  if (t >= KEYS[n - 1].at) return KEYS[n - 1][name];
-  const i = KEYS.findIndex((key) => key.at > t) - 1;
-  const [a, b] = [KEYS[i], KEYS[i + 1]];
-  const before = KEYS[Math.max(0, i - 1)];
-  const after = KEYS[Math.min(n - 1, i + 2)];
-  const span = b.at - a.at;
-  const u = (t - a.at) / span;
-  const h00 = 2 * u ** 3 - 3 * u ** 2 + 1;
-  const h10 = u ** 3 - 2 * u ** 2 + u;
-  const h01 = -2 * u ** 3 + 3 * u ** 2;
-  const h11 = u ** 3 - u ** 2;
-  const slope = (lo, hi, value) => (value(hi) - value(lo)) / (hi.at - lo.at);
-  const one = (value) =>
-    h00 * value(a) +
-    h10 * span * slope(before, b, value) +
-    h01 * value(b) +
-    h11 * span * slope(a, after, value);
-  const first = a[name];
-  return Array.isArray(first)
-    ? first.map((_, k) => one((key) => key[name][k]))
-    : one((key) => key[name]);
-}
-
-/** @typedef {[number, number, number]} V */
+/** @typedef {import('./body.js').V} V */
 /**
  * @typedef {{
  *   head: V, nose: V, lSh: V, rSh: V, lEl: V, rEl: V, lHand: V, rHand: V,
@@ -215,50 +181,6 @@ const JOINTS = /** @type {const} */ ([
   'lToe',
   'rToe',
 ]);
-
-const add = (a, b) => /** @type {V} */ (a.map((v, i) => v + b[i]));
-const sub = (a, b) => /** @type {V} */ (a.map((v, i) => v - b[i]));
-const mul = (a, k) => /** @type {V} */ (a.map((v) => v * k));
-const mix = (a, b, k) => /** @type {V} */ (a.map((v, i) => v + (b[i] - v) * k));
-const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
-const cross = (a, b) =>
-  /** @type {V} */ ([
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ]);
-const length = (a) => Math.hypot(...a);
-const unit = (a) => mul(a, 1 / (length(a) || 1));
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const toRad = (deg) => (deg * Math.PI) / 180;
-
-/** Turns `v` round `axis` (a unit vector) by `angle` radians. */
-function turn(v, axis, angle) {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  return add(add(mul(v, c), mul(cross(axis, v), s)), mul(axis, dot(axis, v) * (1 - c)));
-}
-
-/** Which way his left side points when he has turned `deg` from facing the plate. */
-const leftSide = (deg) => /** @type {V} */ ([-Math.sin(toRad(deg)), 0, Math.cos(toRad(deg))]);
-/** Which way he faces when he has turned `deg`. */
-const facing = (deg) => /** @type {V} */ ([Math.cos(toRad(deg)), 0, Math.sin(toRad(deg))]);
-
-/**
- * Where an elbow (or knee) goes so both bones keep their length, bending
- * towards `pole`.
- */
-function bend(root, end, first, second, pole) {
-  const d = sub(end, root);
-  const reach = Math.min(length(d), first + second - 1e-4);
-  const u = unit(d);
-  const along = (first * first - second * second + reach * reach) / (2 * reach);
-  const out = Math.sqrt(Math.max(0, first * first - along * along));
-  const toPole = sub(pole, root);
-  let side = sub(toPole, mul(u, dot(toPole, u)));
-  if (length(side) < 1e-6) side = [0, -1, 0];
-  return add(add(root, mul(u, along)), mul(unit(side), out));
-}
 
 /** Where the end of the bat is, from the top hand and which way the bat points. */
 function batTipOf(rHand, bat) {
@@ -343,11 +265,6 @@ function bodyFrom(c) {
     bat,
     batTip: batTipOf(rHand, bat),
   };
-}
-
-/** The controls at moment `t` of the swing (0 to 1). */
-function controlsAt(t) {
-  return Object.fromEntries(CONTROLS.map((name) => [name, glide(name, t)]));
 }
 
 /** Blends two poses, `k` of the way from `a` to `b`. */

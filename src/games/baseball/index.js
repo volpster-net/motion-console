@@ -7,10 +7,10 @@
  *   index.js   this file: settings, screens, pitches, and the game loop
  *   field.js   the ballpark and the ball: pitches, hits, flight (tested)
  *   swing.js   spotting a swing and when it really happened (tested)
- *   pitcher.js the pitcher's delivery, as key poses
+ *   pitcher.js the pitcher's delivery, the Wii Sports way (tested)
  *   batter.js  your batter's swing, the Wii Sports way (tested)
- *   batter-model.js  your batter as a 3D cartoon player (three.js)
- *   figure.js  drawing and animating the pitcher
+ *   body.js    what the batter and pitcher share: size, maths, key poses
+ *   players.js both players as 3D cartoon ballplayers (three.js)
  *   render.js  drawing the ballpark, the people, and the ball
  *   sounds.js  sound effects, made with the shared synthesizer
  */
@@ -56,7 +56,7 @@ export const CONFIG = {
 
   pitch: {
     /** Where the ball leaves the pitcher's hand (pitcher.js poses him to match). */
-    release: { x: -0.35, y: 1.75, z: 17.4 },
+    release: { x: -0.28, y: 1.27, z: 17.65 },
     /**
      * The strike zone (m): as wide as the plate (17 in), from the knees to
      * the chest. Pitches cross anywhere within `use` of it (1 = right to the edges).

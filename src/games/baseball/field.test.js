@@ -86,10 +86,10 @@ describe('pitches', () => {
 describe('the pitcher', () => {
   it('lets go of the ball exactly where the pitch starts', () => {
     const pose = pitcherPose(RELEASE_AT);
-    const [x, y] = /** @type {[number, number]} */ (pose.rHand);
+    const [x, y, z] = pose.rHand;
     expect(x).toBeCloseTo(CONFIG.pitch.release.x);
     expect(y).toBeCloseTo(CONFIG.pitch.release.y);
-    expect(pose.z).toBeCloseTo(CONFIG.pitch.release.z);
+    expect(z).toBeCloseTo(CONFIG.pitch.release.z);
   });
 });
 
