@@ -200,50 +200,58 @@ export function createSynth({ volume }) {
     },
 
     /**
-     * A continuous bed of filtered static, like the murmur of a crowd or wind,
-     * fading in. Its loudness can swell and ebb: each `swell` is a slow wave
-     * (`rate` times a second) that raises and lowers it by up to `depth`
-     * (0 to 1). Plays until stopped.
+     * Plays a recorded sound over and over until stopped, like crowd noise.
+     * Each repeat fades in while the one before fades out (over `crossfade`
+     * seconds), so there's no jump where it starts again.
      *
-     * @param {{
-     *   cutoff: number,
-     *   filter?: BiquadFilterType,
-     *   resonance?: number,
-     *   gain?: number,
-     *   swells?: Array<{ rate: number, depth: number }>,
-     *   fadeIn?: number,  seconds
-     * }} options
+     * @param {AudioBuffer} sound  from `load`
+     * @param {{ gain?: number, crossfade?: number, fadeIn?: number }} [options]
      * @returns {Playing | null}
      */
-    bed({ cutoff, filter = 'bandpass', resonance = 1, gain = 0.2, swells = [], fadeIn = 1 }) {
-      if (!ready()) return null;
-      const now = context.currentTime;
-      const source = context.createBufferSource();
-      source.buffer = noiseBuffer;
-      source.loop = true;
-      const shaper = context.createBiquadFilter();
-      shaper.type = filter;
-      shaper.frequency.value = cutoff;
-      shaper.Q.value = resonance;
-      // The swells wobble a gain in the middle; the outer gain fades in and out.
-      const wobble = context.createGain();
-      const depthTotal = swells.reduce((sum, swell) => sum + swell.depth, 0);
-      wobble.gain.value = 1 - depthTotal / 2;
-      const waves = swells.map(({ rate, depth }) => {
-        const wave = context.createOscillator();
-        wave.frequency.value = rate;
-        const amount = context.createGain();
-        amount.gain.value = depth / 2;
-        wave.connect(amount).connect(wobble.gain);
-        wave.start(now);
-        return wave;
-      });
+    loop(sound, { gain = 1, crossfade = 1.5, fadeIn = 1 } = {}) {
+      if (!ready() || !sound) return null;
       const level = context.createGain();
-      level.gain.setValueAtTime(0.0001, now);
-      level.gain.exponentialRampToValueAtTime(gain, now + fadeIn);
-      source.connect(shaper).connect(wobble).connect(level).connect(master);
-      source.start(now, Math.random() * 0.9);
-      return playing([source, ...waves], level, Infinity);
+      level.gain.setValueAtTime(0.0001, context.currentTime);
+      level.gain.exponentialRampToValueAtTime(gain, context.currentTime + fadeIn);
+      level.connect(master);
+      const fade = Math.min(crossfade, sound.duration / 3);
+      /** The copies playing now (two while they overlap). */
+      const sources = new Set();
+      let timer = null;
+      let stopped = false;
+      /** Starts one copy at `start`, fading in (unless it's the first) and out, then schedules the next. */
+      const copy = (start, first) => {
+        const source = context.createBufferSource();
+        source.buffer = sound;
+        const envelope = context.createGain();
+        const end = start + sound.duration;
+        envelope.gain.setValueAtTime(first ? 1 : 0, start);
+        if (!first) envelope.gain.linearRampToValueAtTime(1, start + fade);
+        envelope.gain.setValueAtTime(1, end - fade);
+        envelope.gain.linearRampToValueAtTime(0, end);
+        source.connect(envelope).connect(level);
+        source.addEventListener('ended', () => sources.delete(source));
+        source.start(start);
+        sources.add(source);
+        const next = end - fade;
+        timer = setTimeout(() => copy(next, false), (next - context.currentTime - 0.5) * 1000);
+      };
+      copy(context.currentTime, true);
+      return {
+        get playing() {
+          return !stopped;
+        },
+        stop(fadeOut = 0.3) {
+          if (stopped) return;
+          stopped = true;
+          clearTimeout(timer);
+          const now = context.currentTime;
+          level.gain.cancelScheduledValues(now);
+          level.gain.setValueAtTime(Math.max(0.0001, level.gain.value), now);
+          level.gain.exponentialRampToValueAtTime(0.0001, now + fadeOut);
+          for (const source of sources) source.stop(now + fadeOut + 0.02);
+        },
+      };
     },
 
     /** Releases the audio hardware. Nothing plays after this. */
@@ -269,7 +277,7 @@ function silentSynth() {
     noise: nothing,
     load: () => Promise.resolve(null),
     play: () => null,
-    bed: () => null,
+    loop: () => null,
     close: nothing,
   };
 }

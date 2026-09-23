@@ -2,7 +2,8 @@
  * Home Run Derby's sound effects, made with the shared synthesizer
  * (src/games/shared/synth.js explains how tones and noise bursts work),
  * plus recordings: the crack of the bat (audio/bat-crack.mp3), and the music,
- * ballpark organ (audio/organ.mp3) and the "Charge!" call (audio/charge.mp3).
+ * ballpark organ (audio/organ.mp3) and the "Charge!" call (audio/charge.mp3),
+ * and the crowd clapping and chattering while you bat (audio/crowd.mp3).
  *
  * When there's music: the organ on the title and results screens, "Charge!"
  * as a round starts, and no music while you bat (just the crowd), so you can
@@ -11,6 +12,7 @@
 import { createSynth, NOTE } from '../shared/synth.js';
 import batCrackUrl from './audio/bat-crack.mp3';
 import chargeUrl from './audio/charge.mp3';
+import crowdUrl from './audio/crowd.mp3';
 import organUrl from './audio/organ.mp3';
 
 /**
@@ -32,9 +34,14 @@ export function createSounds({ volume }) {
   let music = null;
   let musicName = '';
 
-  /** The crowd's murmur while you bat, and the timer for their chatter. */
-  let murmur = [];
-  let chatter = null;
+  /** The crowd's noise while you bat: the recording, once loaded, and the loop playing it. */
+  let crowdSound = null;
+  synth.load(crowdUrl).then((sound) => (crowdSound = sound));
+  let crowdLoop = null;
+  /** How loud the crowd plays under everything else. */
+  const CROWD_GAIN = 1;
+  /** Whether the crowd should be heard now (it may still be loading). */
+  let wantCrowd = false;
 
   return {
     get enabled() {
@@ -42,10 +49,7 @@ export function createSounds({ volume }) {
     },
     unlock: synth.unlock,
     onChange: synth.onChange,
-    close() {
-      clearInterval(chatter);
-      synth.close();
-    },
+    close: synth.close,
 
     /**
      * Plays a music track once (stopping any other). Asking for the track
@@ -83,49 +87,29 @@ export function createSounds({ volume }) {
     },
 
     /**
-     * The crowd while you bat: a low murmur that swells and ebbs, with
-     * snatches of chatter (a voice rising here and there) on top.
+     * The crowd while you bat: a real ballpark crowd clapping and chattering,
+     * looped for as long as you're batting.
      */
     crowd() {
-      if (murmur.length || !synth.enabled) return;
-      murmur = [
-        synth.bed({
-          cutoff: 450,
-          resonance: 0.7,
-          gain: 0.28,
-          swells: [
-            { rate: 0.23, depth: 0.35 },
-            { rate: 0.11, depth: 0.25 },
-          ],
-          fadeIn: 1.5,
-        }),
-        synth.bed({
-          cutoff: 1300,
-          resonance: 1.2,
-          gain: 0.11,
-          swells: [{ rate: 0.37, depth: 0.4 }],
-          fadeIn: 1.5,
-        }),
-      ].filter(Boolean);
-      // Chatter: now and then, a voice-like burst somewhere in the crowd.
-      chatter = setInterval(() => {
-        if (Math.random() > 0.35) return;
-        noise({
-          duration: 0.08 + Math.random() * 0.25,
-          gain: 0.06 + Math.random() * 0.12,
-          cutoff: 600 + Math.random() * 1200,
-          filter: 'bandpass',
-          resonance: 4 + Math.random() * 4,
+      if (crowdLoop?.playing || !synth.enabled) return;
+      const start = () => {
+        if (!crowdLoop) crowdLoop = synth.loop(crowdSound, { gain: CROWD_GAIN, fadeIn: 1.5 });
+      };
+      crowdLoop = null;
+      if (crowdSound) start();
+      else
+        synth.load(crowdUrl).then((sound) => {
+          crowdSound = sound;
+          if (wantCrowd) start();
         });
-      }, 180);
+      wantCrowd = true;
     },
 
     /** The crowd quietens down. */
     stopCrowd() {
-      for (const bed of murmur) bed?.stop(1);
-      murmur = [];
-      clearInterval(chatter);
-      chatter = null;
+      wantCrowd = false;
+      crowdLoop?.stop(1);
+      crowdLoop = null;
     },
 
     /** The pitch leaving the pitcher's hand: a quick whoosh. */
