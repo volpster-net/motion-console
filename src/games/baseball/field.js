@@ -113,9 +113,9 @@ export function pitchPosition(t, pitch) {
  */
 export function choosePitch({ index, count, random, config }) {
   const types = Object.entries(config.pitchTypes);
-  // The first pitch is always a fastball, so everyone starts with a straight one.
+  // The first few pitches are fastballs, so everyone can find their timing.
   let key = 'fastball';
-  if (index > 0) {
+  if (index >= config.pitch.mixFrom) {
     const total = types.reduce((sum, [, type]) => sum + type.weight, 0);
     let roll = random() * total;
     for (const [name, type] of types) {

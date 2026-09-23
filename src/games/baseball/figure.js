@@ -2,8 +2,10 @@
  * Simple animated people, for the pitcher and the batter.
  *
  * A person is a skeleton: a handful of joints (head, shoulders, elbows,
- * hands, hips, knees, feet), each a point in metres, with x to the right and
- * y up from the ground. A *pose* says where every joint is.
+ * hands, hips, knees, feet), each a point in metres: [x, y] for a flat
+ * figure (x right, y up), or [x, y, z] for one standing in the 3D ballpark,
+ * which the camera then views from whatever angle it's at. A *pose* says
+ * where every joint is.
  *
  * An animation is a list of key poses at moments from 0 to 1, the way an
  * animator draws the important frames of a motion. To draw any moment in
@@ -11,7 +13,7 @@
  * the motion speeds up and slows down naturally rather than moving like a robot.
  */
 
-/** @typedef {[number, number]} Point  [x, y] in metres */
+/** @typedef {number[]} Point  [x, y] or [x, y, z], in metres */
 /** @typedef {Record<string, Point | number>} Pose  joints (points) plus any extra numbers, like z */
 /** @typedef {{ at: number } & Pose} Keyframe */
 
@@ -45,14 +47,25 @@ export function poseAt(frames, t) {
   const next = frames.findIndex((frame) => frame.at > t);
   const a = frames[next - 1];
   const b = frames[next];
-  const k = ease((t - a.at) / (b.at - a.at));
+  return lerpPose(a, b, ease((t - a.at) / (b.at - a.at)));
+}
+
+/**
+ * The pose `k` of the way from pose `a` to pose `b` (0 = a, 1 = b).
+ *
+ * @param {Pose} a
+ * @param {Pose} b
+ * @param {number} k
+ * @returns {Pose}
+ */
+export function lerpPose(a, b, k) {
   /** @type {Pose} */
   const pose = {};
   for (const key of Object.keys(b)) {
     const from = a[key] ?? b[key];
     const to = b[key];
     pose[key] = Array.isArray(to)
-      ? [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k]
+      ? to.map((value, i) => from[i] + (value - from[i]) * k)
       : from + (to - from) * k;
   }
   return pose;
@@ -107,11 +120,12 @@ export function drawFigure(ctx, pose, place, pxPerMetre, style) {
 
   arm(backArm);
 
-  // Body: a jersey from shoulders to hips, and a belt.
+  // Body: a jersey from shoulders to hips, and a belt. The thick outline
+  // gives the body depth, so it still looks solid when seen side-on.
   const torso = ['lShoulder', 'rShoulder', 'rHip', 'lHip'].map(at);
   ctx.fillStyle = style.jersey;
   ctx.strokeStyle = style.jersey;
-  ctx.lineWidth = px(0.1);
+  ctx.lineWidth = px(0.2);
   ctx.beginPath();
   torso.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
   ctx.closePath();

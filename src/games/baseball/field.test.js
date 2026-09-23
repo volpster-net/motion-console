@@ -31,7 +31,7 @@ describe('the fence', () => {
 });
 
 describe('pitches', () => {
-  const curve = choosePitch({ index: 1, count: 10, random: sequence(0.5), config: CONFIG });
+  const curve = choosePitch({ index: 5, count: 10, random: sequence(0.5), config: CONFIG });
   const path = { ...curve.path, bend: CONFIG.pitchTypes.curveball.bend, breakPower: 2.5 };
 
   it('fly from the pitcher’s hand to the target over the plate', () => {
@@ -51,15 +51,22 @@ describe('pitches', () => {
     expect(pitchPosition(1.1, path).z).toBeLessThan(0);
   });
 
-  it('start with a fastball, then mix it up, getting quicker', () => {
-    const first = choosePitch({ index: 0, count: 10, random: sequence(0.99), config: CONFIG });
-    expect(first.type).toBe('fastball');
+  it('start with fastballs, then mix it up, getting quicker', () => {
+    for (let index = 0; index < CONFIG.pitch.mixFrom; index++) {
+      expect(choosePitch({ index, count: 10, random: sequence(0.99), config: CONFIG }).type).toBe(
+        'fastball',
+      );
+    }
     const kinds = new Set(
       Array.from(
         { length: 50 },
         (_, i) =>
-          choosePitch({ index: 1 + (i % 9), count: 10, random: sequence(i / 50), config: CONFIG })
-            .type,
+          choosePitch({
+            index: CONFIG.pitch.mixFrom + (i % 5),
+            count: 10,
+            random: sequence(i / 50),
+            config: CONFIG,
+          }).type,
       ),
     );
     expect(kinds.size).toBeGreaterThan(3);
@@ -125,7 +132,7 @@ describe('flight', () => {
   });
 
   it('keeps a mistimed swing in the park', () => {
-    const result = fly(-110);
+    const result = fly(-130);
     expect(result.homer).toBe(false);
   });
 
@@ -134,8 +141,8 @@ describe('flight', () => {
   });
 
   it('flies further the better the timing', () => {
-    expect(fly(0).distance).toBeGreaterThan(fly(80).distance);
-    expect(fly(80).distance).toBeGreaterThan(fly(120).distance);
+    expect(fly(0).distance).toBeGreaterThan(fly(100).distance);
+    expect(fly(100).distance).toBeGreaterThan(fly(150).distance);
   });
 });
 
@@ -147,5 +154,18 @@ describe('project', () => {
     const far = project({ x: 0, y: height, z: 90 }, size, CONFIG);
     expect(near.y).toBeCloseTo(horizon * size.height);
     expect(far.scale).toBeLessThan(near.scale);
+  });
+});
+
+describe('difficulty', () => {
+  const fly = (error) => flyToEnd(contactFrom(error, 0.5, CONFIG), CONFIG);
+
+  it('gives a home run for timing within about 90 ms, either way', () => {
+    for (const error of [-85, -40, 0, 40, 85]) expect(fly(error).homer).toBe(true);
+  });
+
+  it('keeps the ball fair out to about 180 ms, then fouls it off', () => {
+    expect(contactFrom(-170, 0.5, CONFIG).foul).toBe(false);
+    expect(contactFrom(-190, 0.5, CONFIG).foul).toBe(true);
   });
 });

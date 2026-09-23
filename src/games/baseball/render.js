@@ -241,13 +241,14 @@ export function createRenderer(canvas, config) {
 
   /**
    * Your batter, in the left-hand batter's box, in your player colour
-   * (batter.js has the swing). Drawn flat at the batter's distance.
+   * (batter.js has the swing). His joints are 3D points around where he
+   * stands, seen through the same camera as the rest of the ballpark.
    */
   function drawBatter(now, color) {
     const pose = batter.pose(now - batSwungAt, now);
-    const feet = to(config.batter.stands);
-    const s = feet.scale;
-    const place = ([x, y]) => ({ x: feet.x + x * s, y: feet.y - y * s });
+    const { stands } = config.batter;
+    const s = to(stands).scale;
+    const place = ([x, y, z]) => to({ x: stands.x + x, y, z: stands.z + z });
     drawFigure(ctx, pose, place, s, {
       jersey: color,
       pants: COLORS.pants,

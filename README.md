@@ -298,27 +298,32 @@ Wii Sports batting: grip the phone like a bat, both hands, over your shoulder, a
 the pitch reaches the plate**. No buttons. Ten pitches, getting quicker; hit as many home runs as
 you can.
 
-- **Timing is everything.** Dead on sends a high, hard drive out of the park. Early pulls the
-  ball to left field, late pushes it to right, very early or late goes foul, and way off is a swing
-  and a miss. Swing speed adds a little distance. The ball flies with gravity and air resistance.
+- **Timing is everything.** Within about 90 ms of perfect is a home run. Early pulls the ball to
+  left field, late pushes it to right; beyond about 180 ms it goes foul, and beyond 240 ms it's a
+  swing and a miss. Every swing tells you how far off you were ("Late · 85 ms"), so you can learn
+  it. Swing speed adds a little distance. The ball flies with gravity and air resistance.
 - **A real ballpark**, in feet: the fence is 330 ft down the lines and 400 ft to centre, so pulled
   home runs are easier, like the real thing.
 - **The pitcher** has a full delivery: set, leg kick, stride, arm cocked, over-the-top release,
   and follow-through, and the ball leaves from his hand. He throws **fastballs, sinkers, sliders,
-  curveballs, and changeups**, each with its own speed and movement (a curve looks high and drops
+  curveballs, and changeups**, each with its own speed and movement (the first three pitches are
+  fastballs, to find your timing) (a curve looks high and drops
   in; a slider breaks late and sharp; a changeup comes out of the same motion but slower). A radar
   readout shows each pitch's type and speed. Timing still decides the hit, so reading the speed
   matters.
-- **Your batter**, in your player colour, stands in the box with a bat waggle and swings through
-  the zone when you swing, with a proper follow-through.
-- The camera sits behind home plate, zoomed like a TV broadcast, and tilts up to follow a hit. A
-  small top-down map shows where every hit landed.
+- **Your batter**, in your player colour, stands side-on in the box facing the plate, front
+  shoulder to the pitcher, with a bat waggle. When you swing, his hips and shoulders turn and the
+  bat sweeps round through the zone to a full follow-through. He's a 3D skeleton seen through the
+  same camera as the ballpark, which is what makes him look right from behind the plate.
+- The camera sits behind home plate, close enough that the pitch visibly grows as it comes in,
+  and tilts up to follow a hit. A small top-down map shows where every hit landed.
 - Results show home runs, hits, longest and total distance, with personal bests for home runs
   and for the longest homer.
 
 The pitcher and batter are animated from **key poses** ([`figure.js`](src/games/baseball/figure.js)):
 each is a simple skeleton of joints, and an animation lists the important poses (like an
-animator's key frames), blending smoothly between them. The delivery is in
+animator's key frames), blending smoothly between them. The pitcher is a flat figure facing the
+camera; the batter's joints are 3D points, projected like everything else in the park. The delivery is in
 [`pitcher.js`](src/games/baseball/pitcher.js) and the swing in
 [`batter.js`](src/games/baseball/batter.js).
 

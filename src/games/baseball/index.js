@@ -52,7 +52,9 @@ export const CONFIG = {
     /** Where pitches cross the plate: around this height, give or take `spread` either way. */
     zone: { height: 0.85, spread: 0.15 },
     /** A fastball's time from hand to plate: slow at first, quicker by the last pitch. */
-    travelMs: { slowest: 820, fastest: 600 },
+    travelMs: { slowest: 880, fastest: 640 },
+    /** The first few pitches are all fastballs, to find your timing; then the mix starts. */
+    mixFrom: 3,
   },
 
   /**
@@ -73,7 +75,7 @@ export const CONFIG = {
     sinker: {
       name: 'Sinker',
       weight: 2,
-      speed: 1.05,
+      speed: 1.04,
       mph: [89, 93],
       bend: { x: 0.25, y: 0.25 },
       breakPower: 2.5,
@@ -81,7 +83,7 @@ export const CONFIG = {
     slider: {
       name: 'Slider',
       weight: 2,
-      speed: 1.15,
+      speed: 1.1,
       mph: [83, 88],
       bend: { x: -0.45, y: 0.1 },
       breakPower: 3,
@@ -89,7 +91,7 @@ export const CONFIG = {
     curveball: {
       name: 'Curveball',
       weight: 2,
-      speed: 1.3,
+      speed: 1.22,
       mph: [75, 81],
       bend: { x: -0.3, y: 0.7 },
       breakPower: 2.5,
@@ -97,7 +99,7 @@ export const CONFIG = {
     changeup: {
       name: 'Changeup',
       weight: 2,
-      speed: 1.3,
+      speed: 1.2,
       mph: [81, 86],
       bend: { x: 0.25, y: 0.3 },
       breakPower: 2.5,
@@ -107,11 +109,14 @@ export const CONFIG = {
   /** Your batter (batter.js): where he stands, and how his swing is timed. */
   batter: {
     /** In the left-hand batter's box, beside the plate. */
-    stands: { x: -0.85, y: 0, z: 0.2 },
+    stands: { x: -0.8, y: 0, z: 0.1 },
     /** The swing, from where it starts on screen to the follow-through. */
     swingMs: 380,
-    /** The phone reports a swing a moment after it starts, so the animation skips ahead to here. */
-    startAt: 0.3,
+    /**
+     * The phone reports a swing a moment after it happens, so the animation
+     * starts almost at the point of contact, to stay in step with you.
+     */
+    startAt: 0.38,
     /** Hold the follow-through, then settle back into the stance. */
     holdMs: 500,
     returnMs: 400,
@@ -137,10 +142,10 @@ export const CONFIG = {
   /** Judging when you swung, relative to the ball reaching the plate. */
   timing: {
     /** Within this of perfect, it's a perfect swing. */
-    perfectMs: 45,
+    perfectMs: 60,
     /** More than this early or late, you miss the ball completely. */
-    windowMs: 180,
-    /** Shifts all timing: positive if swings keep registering early. */
+    windowMs: 240,
+    /** Shifts all timing: raise it if swings keep registering late, lower it if early. */
     biasMs: 0,
     /** The quickest a message could possibly reach the console (see swing.js). */
     quickestTripMs: 30,
@@ -151,7 +156,7 @@ export const CONFIG = {
   /** What a hit does, from dead on (best) to barely touched (worst). */
   hit: {
     /** How fast the ball leaves the bat, m/s. */
-    exitSpeed: { worst: 18, best: 50 },
+    exitSpeed: { worst: 18, best: 53 },
     /** How steeply it leaves the bat, degrees. */
     launchDeg: { worst: 6, best: 30 },
     /** At the edge of the timing window, the ball goes this far left or right… */
@@ -169,13 +174,13 @@ export const CONFIG = {
     /** A real ballpark's shape: shortest down the lines, deepest in centre. */
     fence: { linesFt: 330, centreFt: 400, heightFt: 10 },
     /** The ball is drawn this many times its real size, so it's easy to see. */
-    ballScale: 2.4,
+    ballScale: 3,
     /**
-     * Where we watch from: well behind home plate, zoomed in, like the TV
-     * camera. Zooming from further back makes the pitcher and batter a
-     * similar size, as they look on a broadcast.
+     * Where we watch from: behind home plate, a little zoomed in. Close
+     * enough that the pitch visibly grows as it comes at you (which is how
+     * you judge when to swing), far enough to see the pitcher clearly.
      */
-    camera: { height: 1.5, behind: 7, focal: 2, horizon: 0.45 },
+    camera: { height: 1.5, behind: 4.5, focal: 1.5, horizon: 0.45 },
   },
 
   vibration: {
@@ -448,10 +453,10 @@ function createSession(container, controller) {
     renderer.text(timingLabel(pitch.contact), now, 'timing');
   }
 
-  /** "Perfect!", "Early", or "Late", from how far off the swing was. */
+  /** "Perfect!", or "Early · 85 ms" / "Late · 85 ms", so players can learn the timing. */
   function timingLabel(contact) {
     if (Math.abs(contact.error) <= CONFIG.timing.perfectMs) return 'Perfect!';
-    return contact.error < 0 ? 'Early' : 'Late';
+    return `${contact.error < 0 ? 'Early' : 'Late'} · ${Math.round(Math.abs(contact.error))} ms`;
   }
 
   cleanups.push(
@@ -530,11 +535,12 @@ function createSession(container, controller) {
         pitch.endedAt = now;
         sounds.mitt();
         const swung = pitch.contact?.kind === 'miss';
+        const off = swung ? ` · ${Math.round(Math.abs(pitch.contact.error))} ms` : '';
         const label = !swung
           ? 'Watched it go by'
           : pitch.contact.error < 0
-            ? 'Too early!'
-            : 'Too late!';
+            ? `Too early${off}`
+            : `Too late${off}`;
         renderer.text(swung ? `Swing and a miss! ${label}` : label, now, 'miss');
         const player = activePlayer();
         if (swung && player) controller.vibrate(player.id, CONFIG.vibration.miss);
