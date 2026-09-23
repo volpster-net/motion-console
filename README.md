@@ -13,7 +13,7 @@ gyroscope becomes a pointer, with buttons.
 
 **Status: Milestone 6.** After pairing, the console shows a **launcher menu**: point at a game and
 pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Three games
-so far: **Home Run Derby** (swing your phone like a bat), **Target Practice** (hit rings before they vanish) and **Hoops** (hold Fire,
+so far: **Home Run Derby** (swing your phone like a bat against a real pitcher's repertoire), **Target Practice** (hit rings before they vanish) and **Hoops** (hold Fire,
 swing, and let go to shoot baskets, Wii Sports Resort style). New games plug into the menu by adding a folder.
 
 ## How it works
@@ -298,14 +298,29 @@ Wii Sports batting: grip the phone like a bat, both hands, over your shoulder, a
 the pitch reaches the plate**. No buttons. Ten pitches, getting quicker; hit as many home runs as
 you can.
 
-- **Timing is everything.** Dead on sends a high, hard drive over the 100 m fence. Early pulls the
+- **Timing is everything.** Dead on sends a high, hard drive out of the park. Early pulls the
   ball to left field, late pushes it to right, very early or late goes foul, and way off is a swing
   and a miss. Swing speed adds a little distance. The ball flies with gravity and air resistance.
-- The view is from behind home plate: the pitch grows as it comes at you, a dashed strike zone
-  shows where to meet it, and the view tilts up to follow a hit, like the Wii's camera. A small
-  top-down map shows where every hit landed.
+- **A real ballpark**, in feet: the fence is 330 ft down the lines and 400 ft to centre, so pulled
+  home runs are easier, like the real thing.
+- **The pitcher** has a full delivery: set, leg kick, stride, arm cocked, over-the-top release,
+  and follow-through, and the ball leaves from his hand. He throws **fastballs, sinkers, sliders,
+  curveballs, and changeups**, each with its own speed and movement (a curve looks high and drops
+  in; a slider breaks late and sharp; a changeup comes out of the same motion but slower). A radar
+  readout shows each pitch's type and speed. Timing still decides the hit, so reading the speed
+  matters.
+- **Your batter**, in your player colour, stands in the box with a bat waggle and swings through
+  the zone when you swing, with a proper follow-through.
+- The camera sits behind home plate, zoomed like a TV broadcast, and tilts up to follow a hit. A
+  small top-down map shows where every hit landed.
 - Results show home runs, hits, longest and total distance, with personal bests for home runs
   and for the longest homer.
+
+The pitcher and batter are animated from **key poses** ([`figure.js`](src/games/baseball/figure.js)):
+each is a simple skeleton of joints, and an animation lists the important poses (like an
+animator's key frames), blending smoothly between them. The delivery is in
+[`pitcher.js`](src/games/baseball/pitcher.js) and the swing in
+[`batter.js`](src/games/baseball/batter.js).
 
 How a swing is spotted and timed ([`swing.js`](src/games/baseball/swing.js)):
 
@@ -318,9 +333,10 @@ How a swing is spotted and timed ([`swing.js`](src/games/baseball/swing.js)):
   network jitter doesn't turn a perfect swing into a late one.
 
 **Tuning the feel.** `CONFIG` at the top of
-[`src/games/baseball/index.js`](src/games/baseball/index.js): pitch speeds, the timing window
-(`perfectMs`, `windowMs`), `timing.biasMs` if swings consistently register early or late, exit
-speeds and launch angles, and air drag. The hit physics and the swing detector are unit-tested.
+[`src/games/baseball/index.js`](src/games/baseball/index.js): pitch speeds and the pitcher's
+repertoire (`pitchTypes`: how often, how fast, how much break), the timing window (`perfectMs`,
+`windowMs`), `timing.biasMs` if swings consistently register early or late, exit speeds and launch
+angles, air drag, and the fence in feet. The hit physics and the swing detector are unit-tested.
 
 ### Shared by games
 
@@ -371,9 +387,12 @@ src/
     baseball/               Milestone 6: Home Run Derby
       meta.js               name, description, and tile art for the menu
       index.js              CONFIG, screens, pitches, and the game loop
-      field.js              pitches, timing → contact, ball flight with drag (pure, tested)
+      field.js              pitch types and paths, timing → contact, flight, fence (pure, tested)
       swing.js              swing detection and phone-clock matching (pure, tested)
-      render.js             canvas drawing: ballpark, pitcher, bat, ball, field map
+      figure.js             animated people from key poses
+      pitcher.js            the pitcher's delivery
+      batter.js             your batter's stance and swing
+      render.js             canvas drawing: ballpark, people, ball, field map
       sounds.js             sound effects
     basketball/             Milestone 5: Hoops
       meta.js               name, description, and tile art for the menu

@@ -1,24 +1,88 @@
 import { describe, expect, it } from 'vitest';
-import { contactFrom, flyToEnd, pitchPosition, pitchTravelMs, project } from './field.js';
+import {
+  choosePitch,
+  contactFrom,
+  fenceAt,
+  flyToEnd,
+  pitchPosition,
+  project,
+  toFeet,
+} from './field.js';
 import { CONFIG } from './index.js';
+import { pitcherPose, RELEASE_AT } from './pitcher.js';
 
 const { perfectMs, windowMs } = CONFIG.timing;
 
+/** A predictable stand-in for Math.random: cycles through the given values. */
+function sequence(...values) {
+  let i = 0;
+  return () => values[i++ % values.length];
+}
+
+describe('the fence', () => {
+  it('is 330 ft down the lines and 400 ft to centre', () => {
+    expect(toFeet(fenceAt(0, CONFIG))).toBeCloseTo(400);
+    expect(toFeet(fenceAt(45, CONFIG))).toBeCloseTo(330);
+    expect(toFeet(fenceAt(-45, CONFIG))).toBeCloseTo(330);
+    const alley = toFeet(fenceAt(22, CONFIG));
+    expect(alley).toBeGreaterThan(330);
+    expect(alley).toBeLessThan(400);
+  });
+});
+
 describe('pitches', () => {
-  it('fly from the pitcher to the plate', () => {
-    expect(pitchPosition(0, CONFIG)).toMatchObject({
-      z: CONFIG.pitch.distance,
-      y: CONFIG.pitch.releaseHeight,
-    });
-    expect(pitchPosition(1, CONFIG).z).toBeCloseTo(0);
-    expect(pitchPosition(1, CONFIG).y).toBeCloseTo(CONFIG.pitch.plateHeight);
+  const curve = choosePitch({ index: 1, count: 10, random: sequence(0.5), config: CONFIG });
+  const path = { ...curve.path, bend: CONFIG.pitchTypes.curveball.bend, breakPower: 2.5 };
+
+  it('fly from the pitcher’s hand to the target over the plate', () => {
+    expect(pitchPosition(0, path)).toEqual(CONFIG.pitch.release);
+    const end = pitchPosition(1, path);
+    expect(end.x).toBeCloseTo(path.target.x);
+    expect(end.y).toBeCloseTo(path.target.y);
+    expect(end.z).toBeCloseTo(0);
   });
 
-  it('get quicker through the round', () => {
-    const first = pitchTravelMs(0, 10, 0.5, CONFIG);
-    const last = pitchTravelMs(9, 10, 0.5, CONFIG);
-    expect(first).toBe(CONFIG.pitch.travelMs.slowest);
-    expect(last).toBe(CONFIG.pitch.travelMs.fastest);
+  it('break late: a curveball looks high halfway, then drops onto the target', () => {
+    const straight = { ...path, bend: { x: 0, y: 0 } };
+    expect(pitchPosition(0.5, path).y).toBeGreaterThan(pitchPosition(0.5, straight).y);
+  });
+
+  it('carry on past the plate into the catcher’s mitt', () => {
+    expect(pitchPosition(1.1, path).z).toBeLessThan(0);
+  });
+
+  it('start with a fastball, then mix it up, getting quicker', () => {
+    const first = choosePitch({ index: 0, count: 10, random: sequence(0.99), config: CONFIG });
+    expect(first.type).toBe('fastball');
+    const kinds = new Set(
+      Array.from(
+        { length: 50 },
+        (_, i) =>
+          choosePitch({ index: 1 + (i % 9), count: 10, random: sequence(i / 50), config: CONFIG })
+            .type,
+      ),
+    );
+    expect(kinds.size).toBeGreaterThan(3);
+    const early = choosePitch({ index: 0, count: 10, random: sequence(0.5), config: CONFIG });
+    const late = choosePitch({ index: 9, count: 10, random: sequence(0), config: CONFIG });
+    expect(late.type).toBe('fastball');
+    expect(late.travelMs).toBeLessThan(early.travelMs);
+  });
+
+  it('make slow pitches take longer than fastballs', () => {
+    const at = (type) => CONFIG.pitchTypes[type].speed;
+    expect(at('changeup')).toBeGreaterThan(at('fastball'));
+    expect(at('curveball')).toBeGreaterThan(at('fastball'));
+  });
+});
+
+describe('the pitcher', () => {
+  it('lets go of the ball exactly where the pitch starts', () => {
+    const pose = pitcherPose(RELEASE_AT);
+    const [x, y] = /** @type {[number, number]} */ (pose.rHand);
+    expect(x).toBeCloseTo(CONFIG.pitch.release.x);
+    expect(y).toBeCloseTo(CONFIG.pitch.release.y);
+    expect(pose.z).toBeCloseTo(CONFIG.pitch.release.z);
   });
 });
 
@@ -29,8 +93,11 @@ describe('contactFrom', () => {
   });
 
   it('hits dead on straight to centre field, at full quality', () => {
-    const contact = contactFrom(perfectMs / 2, 0.5, CONFIG);
-    expect(contact).toMatchObject({ kind: 'hit', quality: 1, foul: false });
+    expect(contactFrom(perfectMs / 2, 0.5, CONFIG)).toMatchObject({
+      kind: 'hit',
+      quality: 1,
+      foul: false,
+    });
   });
 
   it('pulls early swings to left field and pushes late ones to right field', () => {
@@ -51,16 +118,15 @@ describe('contactFrom', () => {
 describe('flight', () => {
   const fly = (error, power = 0.5) => flyToEnd(contactFrom(error, power, CONFIG), CONFIG);
 
-  it('sends a perfectly timed swing over the fence', () => {
+  it('sends a perfectly timed swing over the 400 ft centre-field fence', () => {
     const result = fly(0);
     expect(result.homer).toBe(true);
-    expect(result.distance).toBeGreaterThan(CONFIG.field.fenceDistance);
+    expect(toFeet(result.distance)).toBeGreaterThan(400);
   });
 
-  it('keeps a slightly mistimed swing in the park', () => {
+  it('keeps a mistimed swing in the park', () => {
     const result = fly(-110);
     expect(result.homer).toBe(false);
-    expect(result.distance).toBeLessThan(CONFIG.field.fenceDistance);
   });
 
   it('never counts a foul ball as a home run', () => {

@@ -1,9 +1,12 @@
 /**
- * Draws the ballpark on a <canvas>, looking out from just behind home plate,
- * plus the bat in your hands and a small top-down map of where hits land.
- * Every frame is drawn from scratch; far things first, near things last.
+ * Draws the ballpark on a <canvas>, looking out from just behind home plate:
+ * the pitcher, your batter, the ball, and a small top-down map of where hits
+ * land. Every frame is drawn from scratch; far things first, near things last.
  */
-import { pitchPosition, project } from './field.js';
+import { createBatter } from './batter.js';
+import { fenceAt, pitchPosition, project, toFeet } from './field.js';
+import { drawFigure } from './figure.js';
+import { pitcherPose } from './pitcher.js';
 
 const COLORS = {
   skyTop: '#8fc8f0',
@@ -17,9 +20,11 @@ const COLORS = {
   dirt: '#c98f55',
   lines: '#ffffff',
   base: '#ffffff',
-  pitcherBody: '#e5484d',
-  pitcherSkin: '#f1c39b',
-  pitcherLegs: '#f5f5f5',
+  pitcherJersey: '#c8373c',
+  pitcherCap: '#8e1f24',
+  pants: '#f3f4f6',
+  skin: '#e8b48c',
+  glove: '#8a5a2b',
   ball: '#ffffff',
   seam: '#e5484d',
   shadow: 'rgb(0 0 0 / 0.22)',
@@ -35,11 +40,14 @@ const COLORS = {
  */
 export function createRenderer(canvas, config) {
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-  const { fenceDistance, fenceHeight } = config.field;
+  const fenceHeight = config.field.fence.heightFt / 3.28084;
+  /** The fence's distance (m) at an angle, in degrees out from home plate. */
+  const fence = (angleDeg) => fenceAt(angleDeg, config);
+  const batter = createBatter(config.batter);
   let size = { width: 0, height: 0 };
   /** @type {Array<{ text: string, at: number, kind: keyof typeof COLORS.text }>} */
   let texts = [];
-  let batSwungAt = -Infinity;
+  let batSwungAt = Infinity;
   /**
    * How far (in pixels) the view is tilted up to follow a hit ball, like the
    * Wii's camera. Everything in the world moves down together; the bat, map,
@@ -87,11 +95,17 @@ export function createRenderer(canvas, config) {
     ctx.stroke();
   }
 
-  /** Points along an arc on the ground, from one angle to another. */
+  /**
+   * Points along an arc on the ground, from one angle to another.
+   * `distance` is metres, or a function of the angle (for the fence's shape).
+   */
   const arc = (distance, fromDeg, toDeg, y = 0, steps = 36) =>
-    Array.from({ length: steps + 1 }, (_, i) =>
-      ground(distance, fromDeg + ((toDeg - fromDeg) * i) / steps, y),
-    );
+    Array.from({ length: steps + 1 }, (_, i) => {
+      const angle = fromDeg + ((toDeg - fromDeg) * i) / steps;
+      return ground(typeof distance === 'function' ? distance(angle) : distance, angle, y);
+    });
+  /** The fence's shape, extended past the foul lines for the side stands. */
+  const fenceOut = (angle) => fence(Math.min(45, Math.abs(angle)));
 
   function drawPark() {
     const horizonY = config.field.camera.horizon * size.height + lift;
@@ -111,16 +125,16 @@ export function createRenderer(canvas, config) {
     ctx.fillRect(0, horizonY, size.width, size.height - horizonY);
 
     // Stands rising behind the outfield fence, all the way round.
-    const standsBack = arc(fenceDistance + 30, -80, 80, 22);
-    const standsFront = arc(fenceDistance + 2, 80, -80, fenceHeight);
+    const standsBack = arc((a) => fenceOut(a) + 30, -80, 80, 22);
+    const standsFront = arc((a) => fenceOut(a) + 2, 80, -80, fenceHeight);
     shape([...standsBack, ...standsFront], COLORS.stands);
-    const upper = arc(fenceDistance + 30, -80, 80, 22);
-    const lower = arc(fenceDistance + 16, 80, -80, 12);
+    const upper = arc((a) => fenceOut(a) + 30, -80, 80, 22);
+    const lower = arc((a) => fenceOut(a) + 16, 80, -80, 12);
     shape([...upper, ...lower], COLORS.standsLight);
 
     // The outfield fence, with a yellow top rail.
-    const fenceTopPts = arc(fenceDistance, -46, 46, fenceHeight);
-    const fenceFootPts = arc(fenceDistance, 46, -46, 0);
+    const fenceTopPts = arc(fenceOut, -46, 46, fenceHeight);
+    const fenceFootPts = arc(fenceOut, 46, -46, 0);
     shape([...fenceTopPts, ...fenceFootPts], COLORS.fence);
     ctx.beginPath();
     fenceTopPts.map(to).forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
@@ -128,13 +142,13 @@ export function createRenderer(canvas, config) {
     ctx.strokeStyle = COLORS.fenceTop;
     ctx.stroke();
 
-    // Distance markers on the fence.
+    // Distance markers on the fence, in feet: down the lines and the power alleys.
     ctx.font = `800 ${Math.max(10, Math.round(size.height * 0.022))}px Nunito, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffffff';
-    for (const angle of [-32, 32]) {
-      const p = to(ground(fenceDistance - 0.5, angle, fenceHeight * 0.35));
-      ctx.fillText(`${fenceDistance} m`, p.x, p.y);
+    for (const angle of [-42, -22, 22, 42]) {
+      const p = to(ground(fence(angle) - 0.5, angle, fenceHeight * 0.3));
+      ctx.fillText(`${Math.round(toFeet(fence(angle)) / 5) * 5}`, p.x, p.y);
     }
 
     // Infield: a dirt diamond with grass inside, the mound, and the bases.
@@ -166,8 +180,8 @@ export function createRenderer(canvas, config) {
     );
 
     // Foul lines, from home plate out to the fence.
-    line({ x: 0, y: 0, z: 0 }, ground(fenceDistance, -45), 2, COLORS.lines);
-    line({ x: 0, y: 0, z: 0 }, ground(fenceDistance, 45), 2, COLORS.lines);
+    line({ x: 0, y: 0, z: 0 }, ground(fence(45), -45), 2, COLORS.lines);
+    line({ x: 0, y: 0, z: 0 }, ground(fence(45), 45), 2, COLORS.lines);
 
     for (const b of [
       { x: base, z: base },
@@ -199,61 +213,82 @@ export function createRenderer(canvas, config) {
   }
 
   /**
-   * The pitcher on the mound. `windup` goes from 0 to 1 through the windup:
-   * the arm comes back and up, then whips forwards at the release.
+   * The pitcher, `progress` of the way through his delivery (pitcher.js).
+   * He stands on the mound facing us and strides towards the plate as he throws.
    */
-  function drawPitcher(windup) {
-    const z = config.pitch.distance + 0.3;
-    const feet = to({ x: 0, y: 0, z });
+  function drawPitcher(progress, holdingBall) {
+    const pose = pitcherPose(progress);
+    const feet = to({ x: 0, y: 0, z: /** @type {number} */ (pose.z) });
     const s = feet.scale;
-    const body = { w: 0.5 * s, h: 0.8 * s };
-    ctx.save();
-    ctx.lineCap = 'round';
-    // Legs.
-    ctx.strokeStyle = COLORS.pitcherLegs;
-    ctx.lineWidth = 0.18 * s;
-    ctx.beginPath();
-    ctx.moveTo(feet.x - 0.15 * s, feet.y);
-    ctx.lineTo(feet.x - 0.1 * s, feet.y - 0.85 * s);
-    ctx.moveTo(feet.x + 0.15 * s, feet.y);
-    ctx.lineTo(feet.x + 0.1 * s, feet.y - 0.85 * s);
-    ctx.stroke();
-    // Body.
-    ctx.fillStyle = COLORS.pitcherBody;
-    ctx.beginPath();
-    ctx.roundRect(feet.x - body.w / 2, feet.y - 0.85 * s - body.h, body.w, body.h, 0.12 * s);
-    ctx.fill();
-    // Head.
-    ctx.fillStyle = COLORS.pitcherSkin;
-    ctx.beginPath();
-    ctx.arc(feet.x, feet.y - 1.85 * s, 0.14 * s, 0, Math.PI * 2);
-    ctx.fill();
-    // Throwing arm: swings back and up during the windup, then forwards.
-    const shoulder = { x: feet.x + 0.22 * s, y: feet.y - 1.55 * s };
-    const angle = windup < 1 ? -Math.PI / 2 + windup * 2.2 : Math.PI * 0.35;
-    const hand = {
-      x: shoulder.x + Math.cos(angle) * 0.6 * s,
-      y: shoulder.y + Math.sin(angle) * 0.6 * s,
-    };
-    ctx.strokeStyle = COLORS.pitcherBody;
-    ctx.lineWidth = 0.14 * s;
-    ctx.beginPath();
-    ctx.moveTo(shoulder.x, shoulder.y);
-    ctx.lineTo(hand.x, hand.y);
-    ctx.stroke();
-    if (windup < 1) {
+    const place = ([x, y]) => ({ x: feet.x + x * s, y: feet.y - y * s });
+    drawFigure(ctx, pose, place, s, {
+      jersey: COLORS.pitcherJersey,
+      pants: COLORS.pants,
+      skin: COLORS.skin,
+      cap: COLORS.pitcherCap,
+      facing: 'front',
+      glove: COLORS.glove,
+      frontArm: 'right',
+    });
+    if (holdingBall) {
+      const hand = place(/** @type {[number, number]} */ (pose.rHand));
       ctx.fillStyle = COLORS.ball;
       ctx.beginPath();
-      ctx.arc(hand.x, hand.y, 0.07 * s, 0, Math.PI * 2);
+      ctx.arc(hand.x, hand.y, Math.max(2, 0.05 * s), 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /**
+   * Your batter, in the left-hand batter's box, in your player colour
+   * (batter.js has the swing). Drawn flat at the batter's distance.
+   */
+  function drawBatter(now, color) {
+    const pose = batter.pose(now - batSwungAt, now);
+    const feet = to(config.batter.stands);
+    const s = feet.scale;
+    const place = ([x, y]) => ({ x: feet.x + x * s, y: feet.y - y * s });
+    drawFigure(ctx, pose, place, s, {
+      jersey: color,
+      pants: COLORS.pants,
+      skin: COLORS.skin,
+      cap: color,
+      facing: 'back',
+      hands: 'together',
+      frontArm: 'right',
+    });
+    // The bat: a thin handle in the hands, widening to the barrel.
+    const hands = place(/** @type {[number, number]} */ (pose.hands));
+    const tip = place(/** @type {[number, number]} */ (pose.batTip));
+    const angle = Math.atan2(tip.y - hands.y, tip.x - hands.x);
+    const length = Math.hypot(tip.x - hands.x, tip.y - hands.y);
+    const handle = 0.02 * s;
+    const barrel = 0.045 * s;
+    ctx.save();
+    ctx.translate(hands.x, hands.y);
+    ctx.rotate(angle);
+    const wood = ctx.createLinearGradient(0, 0, length, 0);
+    wood.addColorStop(0, COLORS.batDark);
+    wood.addColorStop(0.35, COLORS.bat);
+    wood.addColorStop(1, COLORS.bat);
+    ctx.fillStyle = wood;
+    ctx.beginPath();
+    ctx.moveTo(-0.08 * s, -handle);
+    ctx.lineTo(length * 0.45, -handle * 1.2);
+    ctx.quadraticCurveTo(length * 0.7, -barrel, length - barrel, -barrel);
+    ctx.arc(length - barrel, 0, barrel, -Math.PI / 2, Math.PI / 2);
+    ctx.quadraticCurveTo(length * 0.7, barrel, length * 0.45, handle * 1.2);
+    ctx.lineTo(-0.08 * s, handle);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
   /** The strike zone: where the ball crosses the plate. Swing when it gets here. */
   function drawZone() {
-    const a = to({ x: -0.25, y: config.pitch.plateHeight + 0.35, z: 0 });
-    const b = to({ x: 0.25, y: config.pitch.plateHeight - 0.35, z: 0 });
+    const { height, spread } = config.pitch.zone;
+    const a = to({ x: -0.25, y: height + spread + 0.2, z: 0 });
+    const b = to({ x: 0.25, y: height - spread - 0.2, z: 0 });
     ctx.save();
     ctx.setLineDash([6, 6]);
     ctx.lineWidth = 2;
@@ -310,50 +345,6 @@ export function createRenderer(canvas, config) {
     ctx.restore();
   }
 
-  /**
-   * The bat, in your hands at the bottom right (you're a right-handed
-   * batter, seen from just behind). When you swing, it sweeps across.
-   */
-  function drawBat(now) {
-    const since = now - batSwungAt;
-    const { batSwingMs } = config.effects;
-    // Resting over your shoulder, pointing up and back.
-    const rest = -2.2;
-    const through = 0.9;
-    let angle = rest;
-    if (since < batSwingMs) {
-      const t = since / batSwingMs;
-      angle = rest + (through - rest) * (1 - (1 - t) ** 3);
-    } else if (since < batSwingMs + 500) {
-      angle = through; // follow-through
-    } else if (since < batSwingMs + 900) {
-      angle = through + (rest - through) * ((since - batSwingMs - 500) / 400);
-    }
-    const grip = { x: size.width * 0.66, y: size.height * 0.96 };
-    const length = size.height * 0.42;
-    ctx.save();
-    ctx.translate(grip.x, grip.y);
-    ctx.rotate(angle);
-    const barrel = ctx.createLinearGradient(0, 0, length, 0);
-    barrel.addColorStop(0, COLORS.batDark);
-    barrel.addColorStop(0.3, COLORS.bat);
-    barrel.addColorStop(1, COLORS.bat);
-    ctx.fillStyle = barrel;
-    ctx.beginPath();
-    // Thin handle widening to a thick barrel with a rounded end.
-    const w0 = size.height * 0.012;
-    const w1 = size.height * 0.032;
-    ctx.moveTo(0, -w0);
-    ctx.lineTo(length * 0.45, -w0 * 1.2);
-    ctx.quadraticCurveTo(length * 0.7, -w1, length - w1, -w1);
-    ctx.arc(length - w1, 0, w1, -Math.PI / 2, Math.PI / 2);
-    ctx.quadraticCurveTo(length * 0.7, w1, length * 0.45, w0 * 1.2);
-    ctx.lineTo(0, w0);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
   function drawTexts(now) {
     texts = texts.filter((t) => now - t.at < config.effects.textMs);
     // Newest on top; older ones fade upwards.
@@ -376,13 +367,13 @@ export function createRenderer(canvas, config) {
   }
 
   /**
-   * A small top-down map of the field, bottom left: where this round's hits
+   * A small top-down map of the field, bottom right: where this round's hits
    * landed (gold = home run), and the ball in flight.
    */
   function drawMap(flight, landings) {
     const r = Math.min(size.height * 0.2, 130);
-    const origin = { x: 20 + r, y: size.height - 18 };
-    const scale = r / (fenceDistance * 1.15);
+    const origin = { x: size.width - 20 - r, y: size.height - 18 };
+    const scale = r / (fence(0) * 1.1);
     const at = (p) => ({ x: origin.x + p.x * scale, y: origin.y - p.z * scale });
     ctx.save();
     // Fair territory and the fence.
@@ -392,16 +383,17 @@ export function createRenderer(canvas, config) {
     ctx.arc(origin.x, origin.y, r, -Math.PI / 2 - 1.1, -Math.PI / 2 + 1.1);
     ctx.closePath();
     ctx.fill();
+    const fenceLine = arc(fence, -45, 45).map(at);
     ctx.fillStyle = COLORS.grassFar;
     ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
-    ctx.arc(origin.x, origin.y, fenceDistance * scale, -Math.PI * 0.75, -Math.PI * 0.25);
+    fenceLine.forEach((p) => ctx.lineTo(p.x, p.y));
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = COLORS.fence;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(origin.x, origin.y, fenceDistance * scale, -Math.PI * 0.75, -Math.PI * 0.25);
+    fenceLine.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
     ctx.stroke();
     // The infield.
     const base = (27.4 / Math.SQRT2) * scale;
@@ -452,7 +444,7 @@ export function createRenderer(canvas, config) {
   return {
     resize,
 
-    /** Starts the bat's swing animation. */
+    /** Starts the batter's swing. */
     swingBat(now) {
       batSwungAt = now;
     },
@@ -465,7 +457,7 @@ export function createRenderer(canvas, config) {
     /** Moves every animation later by `ms`, so they freeze during a pause. */
     shift(ms) {
       texts = texts.map((t) => ({ ...t, at: t.at + ms }));
-      batSwungAt += ms;
+      if (Number.isFinite(batSwungAt)) batSwungAt += ms;
     },
 
     clearEffects() {
@@ -475,13 +467,16 @@ export function createRenderer(canvas, config) {
     /**
      * @param {{
      *   now: number,
-     *   pitcher: number,               windup progress, 0 to 1 (1 = thrown)
+     *   pitcher: number,               progress through the delivery, 0 to 1 (pitcher.js)
+     *   holdingBall: boolean,          the ball is still in the pitcher's hand
+     *   pitch: import('./field.js').Pitch | null,
      *   pitchT: number | null,         how far the pitch has travelled (1 = at the plate)
      *   flight: import('./field.js').Flight | null,
      *   landings: Array<{ x: number, z: number, kind: 'homer' | 'fair' | 'foul' }>,
+     *   batterColor: string,
      * }} scene
      */
-    draw({ now, pitcher, pitchT, flight, landings }) {
+    draw({ now, pitcher, holdingBall, pitch, pitchT, flight, landings, batterColor }) {
       if (size.height === 0) return;
       // Follow a hit ball: tilt up just enough to keep it below the top bar, smoothly.
       const frameS = lastDrawAt === null ? 0 : Math.min(0.1, (now - lastDrawAt) / 1000);
@@ -491,17 +486,17 @@ export function createRenderer(canvas, config) {
       lift += (target - lift) * Math.min(1, frameS * 5);
       ctx.clearRect(0, 0, size.width, size.height);
       drawPark();
-      drawPitcher(pitcher);
+      drawPitcher(pitcher, holdingBall);
       if (flight) {
         drawTrail(flight.trail);
         drawBall(flight.p);
-      } else if (pitchT !== null) {
+      } else if (pitch && pitchT !== null) {
         if (pitchT < 1.1) drawZone();
-        const p = pitchPosition(pitchT, config);
+        const p = pitchPosition(pitchT, pitch);
         // Past the plate, the ball goes on into the catcher's mitt, just behind you.
         if (p.z > -1.5) drawBall(p);
       }
-      drawBat(now);
+      drawBatter(now, batterColor);
       drawMap(flight, landings);
       drawTexts(now);
     },

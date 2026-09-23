@@ -1,7 +1,8 @@
 /**
  * The ballpark and the ball, as pure maths: no screen, sound, or clock.
  *
- * The world is measured in metres, looking out from home plate:
+ * The world is measured in metres, looking out from home plate (the game
+ * shows distances in feet; see toFeet):
  *   x: left field (−) to right field (+)
  *   y: height above the ground
  *   z: distance out towards centre field; the pitcher's mound is at z ≈ 18
@@ -41,38 +42,110 @@ const toRad = (deg) => (deg * Math.PI) / 180;
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = (t) => Math.min(1, Math.max(0, t));
 
+/** Metres to feet, for everything the player sees. */
+export const toFeet = (metres) => metres * 3.28084;
+const FEET_TO_M = 1 / 3.28084;
+
+/**
+ * How far the outfield fence is at a given angle (0 = straight out to centre
+ * field, ±45° = down the foul lines), in metres. Like a real ballpark it's
+ * closest down the lines and deepest in centre, curving smoothly between.
+ *
+ * @param {number} angleDeg
+ * @param {Config} config
+ */
+export function fenceAt(angleDeg, config) {
+  const { linesFt, centreFt } = config.field.fence;
+  const t = Math.cos(toRad(Math.min(45, Math.abs(angleDeg)) * 2)); // 1 in centre, 0 on the lines
+  return (linesFt + (centreFt - linesFt) * t) * FEET_TO_M;
+}
+
+/**
+ * @typedef {object} Pitch
+ * @property {Vec} start     where it leaves the pitcher's hand
+ * @property {Vec} target    where it crosses the plate
+ * @property {{ x: number, y: number }} bend  how far off the target it first
+ *   seems to be heading (m): it curves back onto the target on its way in
+ * @property {number} breakPower  how late it breaks: bigger = later and sharper
+ */
+
 /**
  * Where a pitch is, `t` of the way (0 to 1) from the pitcher's hand to the
- * plate: a nearly straight line, with a gentle arc.
+ * plate.
+ *
+ * Breaking pitches, in plain language: the ball sets off as if heading for a
+ * spot beside the real target (the "bend"), and curves back onto the target
+ * as it travels. The curve is `bend × t^breakPower`: tiny at first and
+ * biggest at the end, so the ball looks straight for most of its flight and
+ * then breaks late, which is what makes a good slider or curveball hard to
+ * read. A curveball's bend is upwards, so it looks high and then drops in.
+ *
+ * Past the plate (t > 1), the ball carries straight on towards the catcher.
  *
  * @param {number} t
- * @param {Config} config
+ * @param {Pitch} pitch
  * @returns {Vec}
  */
-export function pitchPosition(t, config) {
-  const { distance, releaseHeight, plateHeight } = config.pitch;
-  const arc = 0.15 * Math.sin(Math.PI * Math.min(1, t)); // a gentle rise and fall
+export function pitchPosition(t, pitch) {
+  const { start, target, bend, breakPower } = pitch;
+  const at = (u) => ({
+    x: lerp(start.x, target.x + bend.x, u) - bend.x * u ** breakPower,
+    y: lerp(start.y, target.y + bend.y, u) - bend.y * u ** breakPower,
+    z: lerp(start.z, target.z, u),
+  });
+  if (t <= 1) return at(t);
+  // Straight on past the plate, at the speed it arrived with.
+  const end = at(1);
+  const before = at(0.99);
+  const k = (t - 1) / 0.01;
   return {
-    x: 0,
-    y: lerp(releaseHeight, plateHeight, t) + arc,
-    z: distance * (1 - t),
+    x: end.x + (end.x - before.x) * k,
+    y: end.y + (end.y - before.y) * k,
+    z: end.z + (end.z - before.z) * k,
   };
 }
 
 /**
- * How long a pitch takes, for pitch number `index` (0-based) of `count`.
- * Pitches get quicker through the round, with a little variety.
+ * Picks the next pitch: its type (weighted at random), speed, and where it
+ * crosses the plate. Pitches get quicker through the round.
  *
- * @param {number} index
- * @param {number} count
- * @param {number} random  0 to 1
- * @param {Config} config
+ * @param {{ index: number, count: number, random: () => number, config: Config }} options
  */
-export function pitchTravelMs(index, count, random, config) {
-  const { slowest, fastest, variety } = config.pitch.travelMs;
+export function choosePitch({ index, count, random, config }) {
+  const types = Object.entries(config.pitchTypes);
+  // The first pitch is always a fastball, so everyone starts with a straight one.
+  let key = 'fastball';
+  if (index > 0) {
+    const total = types.reduce((sum, [, type]) => sum + type.weight, 0);
+    let roll = random() * total;
+    for (const [name, type] of types) {
+      roll -= type.weight;
+      if (roll < 0) {
+        key = name;
+        break;
+      }
+    }
+  }
+  const type = config.pitchTypes[key];
+  const { slowest, fastest } = config.pitch.travelMs;
   const progress = count > 1 ? index / (count - 1) : 0;
-  const base = lerp(slowest, fastest, progress);
-  return base * (1 + (random * 2 - 1) * variety);
+  const zone = config.pitch.zone;
+  return {
+    type: key,
+    name: type.name,
+    mph: Math.round(lerp(type.mph[0], type.mph[1], random())),
+    travelMs: lerp(slowest, fastest, progress) * type.speed,
+    path: /** @type {Pitch} */ ({
+      start: { ...config.pitch.release },
+      target: {
+        x: (random() * 2 - 1) * zone.spread,
+        y: zone.height + (random() * 2 - 1) * zone.spread,
+        z: 0,
+      },
+      bend: { ...type.bend },
+      breakPower: type.breakPower,
+    }),
+  };
 }
 
 /**
@@ -117,7 +190,7 @@ export function launch(contact, config) {
   const across = toRad(contact.sprayDeg);
   const flat = contact.speed * Math.cos(up);
   return {
-    p: { x: 0, y: config.pitch.plateHeight, z: 0.3 },
+    p: { x: 0, y: config.pitch.zone.height, z: 0.3 },
     v: { x: flat * Math.sin(across), y: contact.speed * Math.sin(up), z: flat * Math.cos(across) },
     state: 'flying',
     fair: !contact.foul,
@@ -126,6 +199,9 @@ export function launch(contact, config) {
     trail: [],
   };
 }
+
+/** The angle out from home plate, in degrees: 0 = centre field, negative = left. */
+const angleOf = (p) => (Math.atan2(p.x, p.z) * 180) / Math.PI;
 
 /** Longest slice of time simulated in one go. */
 const MAX_STEP_S = 1 / 120;
@@ -144,7 +220,8 @@ const MAX_STEP_S = 1 / 120;
  */
 export function stepFlight(flight, seconds, config) {
   if (flight.state !== 'flying') return;
-  const { gravity, drag, fenceDistance, fenceHeight } = config.field;
+  const { gravity, drag } = config.field;
+  const fenceHeight = config.field.fence.heightFt * FEET_TO_M;
   const steps = Math.max(1, Math.ceil(seconds / MAX_STEP_S));
   const dt = seconds / steps;
   for (let i = 0; i < steps; i++) {
@@ -152,19 +229,20 @@ export function stepFlight(flight, seconds, config) {
     flight.v.x -= drag * speed * flight.v.x * dt;
     flight.v.y -= (gravity + drag * speed * flight.v.y) * dt;
     flight.v.z -= drag * speed * flight.v.z * dt;
-    const wasInside = flight.distance < fenceDistance;
+    const wasInside = flight.distance < fenceAt(angleOf(flight.p), config);
     flight.p.x += flight.v.x * dt;
     flight.p.y += flight.v.y * dt;
     flight.p.z += flight.v.z * dt;
     flight.distance = Math.hypot(flight.p.x, flight.p.z);
+    const fence = fenceAt(angleOf(flight.p), config);
 
     // Reaching the fence. Only fair balls count: fouls sail into the side stands.
-    if (flight.fair && wasInside && flight.distance >= fenceDistance) {
+    if (flight.fair && wasInside && flight.distance >= fence) {
       if (flight.p.y > fenceHeight) {
         flight.homer = true; // over the fence: it keeps flying into the stands
       } else {
         flight.state = 'wall';
-        flight.distance = fenceDistance;
+        flight.distance = fence;
         return;
       }
     }

@@ -201,3 +201,41 @@
   font-size: 0.4em;
   color: var(--muted);
 }
+
+/* The radar gun: the last pitch's type and speed, like on TV. */
+.hr-radar {
+  position: absolute;
+  top: 66px;
+  left: 16px;
+  z-index: 1;
+  display: grid;
+  gap: 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgb(29 39 51 / 0.82);
+  color: #fff;
+}
+
+.hr-radar small {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #b7c2cd;
+}
+
+.hr-radar b {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.hr-radar span {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: #f2c200;
+}
+
+.hr[data-phase='title'] .hr-radar,
+.hr[data-phase='results'] .hr-radar {
+  display: none;
+}

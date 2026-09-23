@@ -7,22 +7,27 @@
  *   index.js   this file: settings, screens, pitches, and the game loop
  *   field.js   the ballpark and the ball: pitches, hits, flight (tested)
  *   swing.js   spotting a swing and when it really happened (tested)
- *   render.js  drawing the ballpark, pitcher, bat, and ball
+ *   pitcher.js the pitcher's delivery, as key poses
+ *   batter.js  your batter's swing, as key poses
+ *   figure.js  drawing and animating those people
+ *   render.js  drawing the ballpark, the people, and the ball
  *   sounds.js  sound effects, made with the shared synthesizer
  */
 import './baseball.css';
 import { playerColor, playerLabel } from '../../core/players.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
 import { createPersonalBest } from '../shared/personal-best.js';
-import { contactFrom, launch, pitchTravelMs, stepFlight } from './field.js';
+import { choosePitch, contactFrom, launch, stepFlight, toFeet } from './field.js';
 import meta from './meta.js';
+import { RELEASE_AT } from './pitcher.js';
 import { createRenderer } from './render.js';
 import { createSounds } from './sounds.js';
 import { createClockMatch, createSwingDetector, normalizeSwing, spinSpeed } from './swing.js';
 
 /**
- * Every number that shapes how the game feels, in one place. Distances are
- * in metres; times are in milliseconds.
+ * Every number that shapes how the game feels, in one place. The physics
+ * works in metres (the fence is set in feet, and the game shows feet); times
+ * are in milliseconds.
  */
 export const CONFIG = {
   round: {
@@ -31,8 +36,10 @@ export const CONFIG = {
     countdownFrom: 3,
     /** Ignore the trigger this long after the results appear. */
     resultsLockMs: 1200,
-    /** The pitcher's windup before each pitch. */
+    /** The pitcher's delivery, from the set position to letting go of the ball… */
     windupMs: 1500,
+    /** …and from the release to his fielding stance. */
+    followMs: 500,
     /** How long a miss (or a pitch you didn't swing at) stays on screen. */
     afterMissMs: 1200,
     /** How long a hit's result stays up after the ball comes down. */
@@ -40,13 +47,74 @@ export const CONFIG = {
   },
 
   pitch: {
-    /** From the pitcher's hand to home plate. */
-    distance: 18.4,
-    releaseHeight: 1.8,
-    /** Where the ball crosses the plate. */
-    plateHeight: 0.9,
-    /** Time from release to the plate: slow at first, quicker by the last pitch, ± a little variety. */
-    travelMs: { slowest: 900, fastest: 620, variety: 0.08 },
+    /** Where the ball leaves the pitcher's hand (pitcher.js poses him to match). */
+    release: { x: -0.35, y: 1.75, z: 17.4 },
+    /** Where pitches cross the plate: around this height, give or take `spread` either way. */
+    zone: { height: 0.85, spread: 0.15 },
+    /** A fastball's time from hand to plate: slow at first, quicker by the last pitch. */
+    travelMs: { slowest: 820, fastest: 600 },
+  },
+
+  /**
+   * The pitcher's repertoire. `weight` is how often he throws it; `speed`
+   * multiplies the fastball's travel time (bigger = slower); `mph` is shown on
+   * the radar; `bend` is how far off target it first seems to head (m, x = our
+   * right, y = up) before breaking back in; `breakPower` is how late it breaks.
+   */
+  pitchTypes: {
+    fastball: {
+      name: 'Fastball',
+      weight: 4,
+      speed: 1,
+      mph: [92, 97],
+      bend: { x: 0, y: -0.05 },
+      breakPower: 2,
+    },
+    sinker: {
+      name: 'Sinker',
+      weight: 2,
+      speed: 1.05,
+      mph: [89, 93],
+      bend: { x: 0.25, y: 0.25 },
+      breakPower: 2.5,
+    },
+    slider: {
+      name: 'Slider',
+      weight: 2,
+      speed: 1.15,
+      mph: [83, 88],
+      bend: { x: -0.45, y: 0.1 },
+      breakPower: 3,
+    },
+    curveball: {
+      name: 'Curveball',
+      weight: 2,
+      speed: 1.3,
+      mph: [75, 81],
+      bend: { x: -0.3, y: 0.7 },
+      breakPower: 2.5,
+    },
+    changeup: {
+      name: 'Changeup',
+      weight: 2,
+      speed: 1.3,
+      mph: [81, 86],
+      bend: { x: 0.25, y: 0.3 },
+      breakPower: 2.5,
+    },
+  },
+
+  /** Your batter (batter.js): where he stands, and how his swing is timed. */
+  batter: {
+    /** In the left-hand batter's box, beside the plate. */
+    stands: { x: -0.85, y: 0, z: 0.2 },
+    /** The swing, from where it starts on screen to the follow-through. */
+    swingMs: 380,
+    /** The phone reports a swing a moment after it starts, so the animation skips ahead to here. */
+    startAt: 0.3,
+    /** Hold the follow-through, then settle back into the stance. */
+    holdMs: 500,
+    returnMs: 400,
   },
 
   /** Spotting a swing from the gyroscope's total spin speed (°/s). */
@@ -98,12 +166,16 @@ export const CONFIG = {
     gravity: 9.81,
     /** Air resistance. Bigger = hits come down sooner. */
     drag: 0.004,
-    fenceDistance: 100,
-    fenceHeight: 3,
+    /** A real ballpark's shape: shortest down the lines, deepest in centre. */
+    fence: { linesFt: 330, centreFt: 400, heightFt: 10 },
     /** The ball is drawn this many times its real size, so it's easy to see. */
     ballScale: 2.4,
-    /** Where we watch from: just behind home plate. */
-    camera: { height: 1.4, behind: 3, focal: 1.25, horizon: 0.45 },
+    /**
+     * Where we watch from: well behind home plate, zoomed in, like the TV
+     * camera. Zooming from further back makes the pitcher and batter a
+     * similar size, as they look on a broadcast.
+     */
+    camera: { height: 1.5, behind: 7, focal: 2, horizon: 0.45 },
   },
 
   vibration: {
@@ -165,6 +237,7 @@ function createSession(container, controller) {
   container.innerHTML = `
     <div class="hr card">
       <canvas class="hr-canvas"></canvas>
+      <div class="hr-radar" hidden><small>Pitch</small><b data-radar="name"></b><span data-radar="mph"></span></div>
       <header class="hr-hud">
         <span class="hr-stat"><small>Home runs</small><b data-hud="homers">0</b></span>
         <span class="hr-stat hr-mid"><small>Pitch</small><b data-hud="pitch">–</b></span>
@@ -177,6 +250,11 @@ function createSession(container, controller) {
   const canvas = /** @type {HTMLCanvasElement} */ (root.querySelector('.hr-canvas'));
   const screen = /** @type {HTMLElement} */ (root.querySelector('.hr-screen'));
   const soundButton = /** @type {HTMLElement} */ (root.querySelector('.hr-sound'));
+  const radar = {
+    root: /** @type {HTMLElement} */ (root.querySelector('.hr-radar')),
+    name: root.querySelector('[data-radar="name"]'),
+    mph: root.querySelector('[data-radar="mph"]'),
+  };
   const hud = {
     homers: root.querySelector('[data-hud="homers"]'),
     pitch: root.querySelector('[data-hud="pitch"]'),
@@ -186,7 +264,7 @@ function createSession(container, controller) {
   const renderer = createRenderer(canvas, CONFIG);
   const sounds = createSounds(CONFIG.sound);
   const bestHomers = createPersonalBest(id);
-  const bestLongest = createPersonalBest(`${id}.longest`);
+  const bestLongest = createPersonalBest(`${id}.longestFt`);
   const cleanups = [];
 
   // ---- Layout -------------------------------------------------------------
@@ -228,7 +306,11 @@ function createSession(container, controller) {
    *   index: number,
    *   stage: 'windup' | 'pitch' | 'result',
    *   stageAt: number,
+   *   type: string,
+   *   name: string,
+   *   mph: number,
    *   travelMs: number,
+   *   path: import('./field.js').Pitch,
    *   releaseAt: number,
    *   plateAt: number,
    *   contact: import('./field.js').Contact | null,
@@ -280,12 +362,18 @@ function createSession(container, controller) {
 
   /** Sets up pitch number `index` (0-based), starting with the windup. */
   function newPitch(index, now) {
-    const travelMs = pitchTravelMs(index, CONFIG.round.pitches, Math.random(), CONFIG);
+    const chosen = choosePitch({
+      index,
+      count: CONFIG.round.pitches,
+      random: Math.random,
+      config: CONFIG,
+    });
+    radar.root.hidden = true;
     return {
       index,
       stage: /** @type {const} */ ('windup'),
       stageAt: now,
-      travelMs,
+      ...chosen,
       releaseAt: 0,
       plateAt: 0,
       contact: null,
@@ -303,9 +391,10 @@ function createSession(container, controller) {
 
   function showResults(now) {
     const newHomerBest = stats.homers > recordHomers;
-    const newLongestBest = stats.longest > recordLongest;
+    const longestFt = Math.round(toFeet(stats.longest));
+    const newLongestBest = longestFt > recordLongest;
     if (newHomerBest) bestHomers.save((recordHomers = stats.homers));
-    if (newLongestBest) bestLongest.save((recordLongest = Math.round(stats.longest)));
+    if (newLongestBest) bestLongest.save((recordLongest = longestFt));
     phase = { name: 'results', at: now };
     root.dataset.phase = 'results';
     sounds.roundEnd();
@@ -317,10 +406,10 @@ function createSession(container, controller) {
       ${newLongestBest && !newHomerBest ? '<p class="hr-best">New longest home run!</p>' : ''}
       <dl class="hr-results">
         <div><dt>Hits</dt><dd>${stats.hits} / ${CONFIG.round.pitches}</dd></div>
-        <div><dt>Longest</dt><dd>${stats.longest ? `${Math.round(stats.longest)} m` : '–'}</dd></div>
-        <div><dt>Total distance</dt><dd>${Math.round(stats.total)} m</dd></div>
+        <div><dt>Longest</dt><dd>${stats.longest ? `${longestFt} ft` : '–'}</dd></div>
+        <div><dt>Total distance</dt><dd>${Math.round(toFeet(stats.total))} ft</dd></div>
         <div><dt>Best (home runs)</dt><dd>${recordHomers}</dd></div>
-        <div><dt>Best (longest)</dt><dd>${recordLongest ? `${recordLongest} m` : '–'}</dd></div>
+        <div><dt>Best (longest)</dt><dd>${recordLongest ? `${recordLongest} ft` : '–'}</dd></div>
       </dl>
       <p class="hr-cta">Pull the trigger to play again</p>`;
   }
@@ -428,6 +517,10 @@ function createSession(container, controller) {
       pitch.releaseAt = now;
       pitch.plateAt = now + pitch.travelMs;
       sounds.pitch();
+      // The radar gun, like on TV.
+      radar.name.textContent = pitch.name;
+      radar.mph.textContent = `${pitch.mph} mph`;
+      radar.root.hidden = false;
     } else if (pitch.stage === 'pitch') {
       // The ball has passed the plate, and no swing message can still be on its way.
       const { windowMs, lateGraceMs } = CONFIG.timing;
@@ -466,7 +559,7 @@ function createSession(container, controller) {
   function finishHit(pitch, now) {
     pitch.endedAt = now;
     const { flight, contact } = pitch;
-    const metres = Math.round(flight.distance);
+    const feet = Math.round(toFeet(flight.distance));
     if (contact.kind !== 'hit') return;
     if (contact.foul) {
       renderer.text('Foul ball', now, 'miss');
@@ -478,12 +571,12 @@ function createSession(container, controller) {
     if (flight.homer) {
       stats.homers += 1;
       stats.longest = Math.max(stats.longest, flight.distance);
-      renderer.text(`HOME RUN! ${metres} m`, now, 'homer');
+      renderer.text(`HOME RUN! ${feet} ft`, now, 'homer');
     } else if (flight.state === 'wall') {
       sounds.wall();
-      renderer.text(`Off the wall! ${metres} m`, now, 'hit');
+      renderer.text(`Off the wall! ${feet} ft`, now, 'hit');
     } else {
-      renderer.text(`${metres} m`, now, 'hit');
+      renderer.text(`${feet} ft`, now, 'hit');
     }
   }
 
@@ -498,25 +591,36 @@ function createSession(container, controller) {
     // The current pitch's stage and plate time, on the element: handy for debugging and tests.
     root.dataset.stage = pitch?.stage ?? '';
     root.dataset.plateAt = pitch?.stage === 'pitch' ? String(pitch.plateAt) : '';
+    const player = activePlayer();
     renderer.draw({
       now,
-      pitcher: pitch
-        ? pitch.stage === 'windup'
-          ? (now - pitch.stageAt) / CONFIG.round.windupMs
-          : 1
-        : 0,
+      pitcher: pitcherProgress(pitch, now),
+      holdingBall: !pitch || pitch.stage === 'windup',
+      pitch: pitch?.path ?? null,
       pitchT:
         pitch && (pitch.stage === 'pitch' || (pitch.stage === 'result' && !pitch.flight))
           ? (now - pitch.releaseAt) / pitch.travelMs
           : null,
       flight: pitch?.flight ?? null,
       landings: stats.landings,
+      batterColor: playerColor(player?.slot ?? 1),
     });
 
     const pitchNumber = pitch ? Math.min(pitch.index + 1, CONFIG.round.pitches) : null;
     setHud('homers', String(stats.homers));
     setHud('pitch', pitchNumber ? `${pitchNumber} / ${CONFIG.round.pitches}` : '–');
-    setHud('longest', stats.longest ? `${Math.round(stats.longest)} m` : '–');
+    setHud('longest', stats.longest ? `${Math.round(toFeet(stats.longest))} ft` : '–');
+  }
+
+  /**
+   * How far through his delivery the pitcher is (0 to 1): the windup leads up
+   * to the release, then the follow-through plays out while the ball is on its way.
+   */
+  function pitcherProgress(pitch, now) {
+    if (!pitch) return 0;
+    const { windupMs, followMs } = CONFIG.round;
+    if (pitch.stage === 'windup') return ((now - pitch.stageAt) / windupMs) * RELEASE_AT;
+    return Math.min(1, RELEASE_AT + ((now - pitch.releaseAt) / followMs) * (1 - RELEASE_AT));
   }
 
   const shownHud = { homers: '', pitch: '', longest: '' };
