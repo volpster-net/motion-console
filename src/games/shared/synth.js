@@ -103,10 +103,12 @@ export function createSynth({ volume }) {
      *   cutoff: number,           the filter's pitch in Hz
      *   filter?: BiquadFilterType, 'lowpass' keeps sounds below the cutoff (dull),
      *                              'highpass' keeps sounds above it (hissy)
+     *   resonance?: number,        how sharply the filter rings at its pitch: 1 is
+     *                              gentle, 5 or more gives a woody, knocking ring
      *   delay?: number,
      * }} options
      */
-    noise({ duration, gain = 0.5, cutoff, filter = 'lowpass', delay = 0 }) {
+    noise({ duration, gain = 0.5, cutoff, filter = 'lowpass', resonance = 1, delay = 0 }) {
       if (!ready()) return;
       const start = context.currentTime + delay;
       const source = context.createBufferSource();
@@ -114,6 +116,7 @@ export function createSynth({ volume }) {
       const shaper = context.createBiquadFilter();
       shaper.type = filter;
       shaper.frequency.value = cutoff;
+      shaper.Q.value = resonance;
       const envelope = context.createGain();
       envelope.gain.setValueAtTime(gain, start);
       envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);

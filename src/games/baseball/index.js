@@ -26,6 +26,7 @@ import { createRenderer } from './render.js';
 import { createSounds } from './sounds.js';
 import {
   createClockMatch,
+  createBatWaggle,
   createSwingDetector,
   createTimingCalibration,
   createVerticalSpin,
@@ -164,6 +165,12 @@ export const CONFIG = {
     /** Swing speeds that count as the weakest (0) and strongest (1). */
     weakest: 450,
     strongest: 1500,
+    /**
+     * Wiggling the bat by tipping the phone while you wait (see createBatWaggle):
+     * the bat tips 1.5 degrees for each degree the phone does, up to 25, and
+     * settles back to the stance over about a second and a half.
+     */
+    waggle: { calmRate: 150, settleMs: 1500, degreesPerTip: 1.5, maxDegrees: 25 },
   },
 
   /** Judging when you swung, relative to the ball reaching the plate. */
@@ -467,6 +474,9 @@ function createSession(container, controller) {
     axisOrder: loadAimSettings().axisOrder,
     calmRate: CONFIG.swing.calmRate,
   });
+  const waggle = createBatWaggle(CONFIG.swing.waggle);
+  /** How far you've tipped the bat, in degrees (see createBatWaggle). */
+  let batWaggle = { side: 0, forward: 0 };
   const clock = createClockMatch(CONFIG.timing);
   const calibration = createTimingCalibration({
     ...CONFIG.timing.calibration,
@@ -523,6 +533,7 @@ function createSession(container, controller) {
       if (paused || player.id !== activePlayer()?.id) return;
       const reading = /** @type {any} */ (sample);
       clock.observe(reading.t, performance.now());
+      batWaggle = waggle.update(reading);
       const event = detector.update(verticalSpin.read(reading), reading.t);
       if (!event) return;
       if (event.type === 'start') {
@@ -670,6 +681,7 @@ function createSession(container, controller) {
       pitchT: pitch ? shownPitchT(pitch, now) : null,
       flight: pitch?.flight ?? null,
       batterLoad: batterLoad(pitch, now),
+      batWaggle,
       landings: stats.landings,
       batterColor: playerColor(player?.slot ?? 1),
       // The strike zone during play, marking where the pitch crossed once it has.

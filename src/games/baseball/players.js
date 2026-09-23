@@ -2,8 +2,8 @@
  * The batter and the pitcher as 3D cartoon ballplayers, in the style of Wii
  * Sports: a big round head, no neck, a short rounded shirt in their team
  * colour, slim arms with round hands, striped pants and round shoes. The
- * batter has a big glossy yellow bat; the pitcher a cap, a brown glove and
- * the ball. They're posed from their joints (batter.js, pitcher.js) and seen
+ * batter has a shiny batting helmet and a big glossy yellow bat; the pitcher
+ * a cap, a brown glove and the ball. They're posed from their joints (batter.js, pitcher.js) and seen
  * through exactly the same camera as the rest of the ballpark, then painted
  * onto the game's canvas like everything else.
  *
@@ -36,12 +36,12 @@ const material = (color, roughness = 0.6, extra = {}) =>
 /**
  * Builds one player: his body parts in their own group, ready to be posed.
  *
- * @param {{ bat?: boolean, glove?: boolean, cap?: boolean }} kit
+ * @param {{ bat?: boolean, helmet?: boolean, glove?: boolean, cap?: boolean }} kit
  */
 function createPlayer(kit) {
   const root = new THREE.Group();
   const shirt = material(0x1f9bf0, 0.65);
-  const capColor = material(0x1f9bf0, 0.45);
+  const capColor = material(0x1f9bf0, kit.helmet ? 0.2 : 0.45);
   const skin = material(COLORS.skin, 0.7);
   const hair = material(COLORS.hair, 0.8);
 
@@ -112,7 +112,7 @@ function createPlayer(kit) {
   });
   const arms = { l: arm(), r: arm() };
 
-  // ---- Head: big and round, with hair, and a cap for the pitcher ------------
+  // ---- Head: big and round, with hair; a helmet for the batter, a cap for the pitcher
   // (The head's own axes: x to his right, y up, z out of the back of his head.)
   const head = new THREE.Group();
   root.add(head);
@@ -123,7 +123,18 @@ function createPlayer(kit) {
       new THREE.SphereGeometry(radius, 28, 16, 0, Math.PI * 2, 0, Math.PI * reach),
       mat,
     );
-  if (kit.cap) {
+  if (kit.helmet) {
+    // A shiny batting helmet in the team colour: down over the back of his
+    // head, a short brim, and the ear flap over his left ear (the side facing
+    // the pitcher, for a right-handed batter).
+    const shell = topHalf(R * 1.1, capColor, 0.56);
+    shell.rotation.x = 0.25;
+    head.add(shell);
+    const brim = ball(R * 0.75, capColor, [0.8, 0.1, 0.7], head);
+    brim.position.set(0, R * 0.22, -R * 0.82);
+    const flap = ball(R * 0.5, capColor, [0.45, 1, 0.9], head);
+    flap.position.set(-R * 0.86, -R * 0.2, R * 0.05);
+  } else if (kit.cap) {
     head.add(topHalf(R * 1.06, capColor, 0.46));
     const brim = ball(R * 0.9, capColor, [0.85, 0.1, 0.8], head);
     brim.position.set(0, R * 0.3, -R * 0.75);
@@ -272,7 +283,7 @@ export function createPlayers() {
   sun.position.set(-2, 6, 6);
   scene.add(sun);
 
-  const batter = createPlayer({ bat: true });
+  const batter = createPlayer({ bat: true, helmet: true });
   const pitcher = createPlayer({ glove: true, cap: true });
   scene.add(batter.root, pitcher.root);
 

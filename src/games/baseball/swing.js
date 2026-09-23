@@ -273,3 +273,56 @@ export function createTimingCalibration({ samples, maxMs, storageKey }) {
     },
   };
 }
+
+/**
+ * Wiggling the bat with the phone while you wait for the pitch.
+ *
+ * Tip the phone and the batter's bat tips the same way. It follows how far
+ * the phone has tipped from the way you've been holding it lately, not from
+ * some fixed "straight up", so however you like to hold it, holding still
+ * lets the bat settle back to its stance, and small wiggles show up right
+ * away. It only follows the phone while it's fairly still, so a swing
+ * doesn't fling the bat about before the swing itself takes over.
+ *
+ * @param {{ calmRate: number, settleMs: number, degreesPerTip: number, maxDegrees: number }} options
+ *   calmRate: only follow the phone while it's spinning slower than this (°/s);
+ *   settleMs: how long the bat takes to settle back when you hold a new tilt;
+ *   degreesPerTip: how many degrees the bat tips for each degree the phone does;
+ *   maxDegrees: the most the bat tips either way
+ */
+export function createBatWaggle({ calmRate, settleMs, degreesPerTip, maxDegrees }) {
+  /** @type {{ x: number, y: number, z: number } | null} */
+  let usual = null;
+  let lastT = null;
+  let waggle = { side: 0, forward: 0 };
+
+  return {
+    /**
+     * @param {{ alpha: number, beta: number, gamma: number, gx?: number, gy?: number, gz?: number, t: number }} sample
+     * @returns {{ side: number, forward: number }} degrees: `side` tips the bat
+     *   left or right as you see the screen, `forward` tips it towards or away from you
+     */
+    update(sample) {
+      if (sample.gx === undefined) return waggle;
+      const down = normalize({ x: sample.gx, y: sample.gy, z: sample.gz });
+      const spinning = spinSpeed(sample) > calmRate;
+      const seconds = lastT === null ? 0 : Math.max(0, Math.min(0.2, (sample.t - lastT) / 1000));
+      lastT = sample.t;
+      if (!down || spinning) return waggle;
+      if (!usual) usual = down;
+      // Slowly settle "the usual" towards how the phone's held now.
+      const k = Math.min(1, (seconds * 1000) / settleMs);
+      usual =
+        normalize({
+          x: usual.x + (down.x - usual.x) * k,
+          y: usual.y + (down.y - usual.y) * k,
+          z: usual.z + (down.z - usual.z) * k,
+        }) ?? down;
+      // How far it's tipped from the usual: across the screen (x) and in and out of it (z).
+      const toDegrees = (v) =>
+        Math.max(-maxDegrees, Math.min(maxDegrees, ((v * 180) / Math.PI) * degreesPerTip));
+      waggle = { side: toDegrees(down.x - usual.x), forward: toDegrees(down.z - usual.z) };
+      return waggle;
+    },
+  };
+}

@@ -72,32 +72,34 @@ const deliveryAt = keyPoses([
   },
   {
     // Stride: the front foot reaches out and lands towards the plate, the
-    // glove points at it, and the ball goes back and up.
+    // glove arm swings out wide, and the ball goes back and up.
     at: 0.56,
     turn: -5,
     pelvis: [0.02, 0.55, 0.3],
     rHand: [0.06, 1.12, -0.32],
-    lHand: [0.08, 1.0, 0.56],
+    lHand: [-0.26, 1.02, 0.52],
     lFoot: [-0.05, 0.06, 0.72],
     lFootTurn: 70,
   },
   {
-    // Arm cocked: hips open, the ball high behind his head, glove tucking in.
+    // Arm cocked: hips open, the ball high behind his head, the glove arm
+    // still out wide on his glove side.
     at: 0.67,
     turn: 40,
     pelvis: [0.02, 0.55, 0.38],
     lean: 0.08,
     rHand: [0.26, 1.3, -0.04],
-    lHand: [-0.06, 0.92, 0.5],
+    lHand: [-0.4, 1.02, 0.55],
   },
   {
-    // Release: square to the plate, leaning in, arm high out in front.
+    // Release: square to the plate, leaning in, arm high out in front, and
+    // the glove snapped back in tight to his chest.
     at: RELEASE_AT,
     turn: 100,
     pelvis: [0, 0.53, 0.45],
     lean: 0.18,
     rHand: [0.28, 1.27, 0.75],
-    lHand: [-0.18, 0.9, 0.42],
+    lHand: [-0.1, 0.96, 0.62],
     rFoot: [0.1, 0.12, 0],
     rFootTurn: 30,
   },

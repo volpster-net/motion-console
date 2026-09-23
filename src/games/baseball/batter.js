@@ -142,13 +142,13 @@ const controlsAt = keyPoses([
     pivot: 1,
   },
   {
-    // Finish: hands up by his front shoulder, the bat over his shoulder,
-    // pointing back behind him.
+    // Finish: hands up by his front shoulder, the bat wrapped right round
+    // over his shoulder, its end coming back towards us (like Wii Sports).
     at: 1,
     turn: 150,
-    hands: [-0.02, 1.26, 0.18],
+    hands: [0.02, 1.22, 0.16],
     batYaw: 262,
-    batTilt: 38,
+    batTilt: -18,
   },
 ]);
 
@@ -388,8 +388,30 @@ export function createBatter(timing) {
     };
   }
 
+  /**
+   * Tips the bat round his hands as you tip the phone (swing.js
+   * createBatWaggle): `side` leans it towards or away from the plate,
+   * `forward` towards the pitcher or the catcher. His hands follow a little.
+   */
+  function wiggled(pose, waggle) {
+    if (!waggle || (!waggle.side && !waggle.forward)) return pose;
+    let bat = turn(pose.bat, [0, 0, 1], toRad(-waggle.side));
+    bat = unit(turn(bat, [1, 0, 0], toRad(waggle.forward)));
+    const shift = /** @type {V} */ ([waggle.side * -0.002, 0, waggle.forward * 0.002]);
+    const rHand = add(pose.rHand, shift);
+    return {
+      ...pose,
+      rHand,
+      lHand: sub(rHand, mul(bat, length(sub(pose.rHand, pose.lHand)))),
+      rEl: add(pose.rEl, mul(shift, 0.5)),
+      lEl: add(pose.lEl, mul(shift, 0.5)),
+      bat,
+      batTip: batTipOf(rHand, bat),
+    };
+  }
+
   /** @returns {Pose} */
-  function poseNow(sinceSwing, now, reach, load) {
+  function poseNow(sinceSwing, now, reach, load, waggle) {
     const { swingMs, holdMs, returnMs, startAt, blendMs = 60 } = timing;
     if (sinceSwing >= 0) {
       if (sinceSwing < swingMs) {
@@ -410,9 +432,10 @@ export function createBatter(timing) {
       }
     }
     if (load > 0.001) {
-      return alive(swingPose(LOADED_AT * clamp(load, 0, 1)), now, 1 - Math.min(1, load * 3));
+      const loading = swingPose(LOADED_AT * clamp(load, 0, 1));
+      return wiggled(alive(loading, now, 1 - Math.min(1, load * 3)), waggle);
     }
-    return alive(stance, now, 1);
+    return wiggled(alive(stance, now, 1), waggle);
   }
 
   return {
@@ -424,10 +447,12 @@ export function createBatter(timing) {
      * @param {number} now         ms, for his small movements while waiting
      * @param {V | null} [reach]   where this pitch crosses the plate, around the batter
      * @param {number} [load]      0 to 1: how far through his leg kick and load he is
+     * @param {{ side: number, forward: number } | null} [waggle]  how far you've tipped
+     *   the bat with the phone while waiting (degrees)
      * @returns {Pose}
      */
-    pose(sinceSwing, now, reach = null, load = 0) {
-      last = poseNow(sinceSwing, now, reach, load);
+    pose(sinceSwing, now, reach = null, load = 0, waggle = null) {
+      last = poseNow(sinceSwing, now, reach, load, waggle);
       return last;
     },
   };

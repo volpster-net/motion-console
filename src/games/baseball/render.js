@@ -329,8 +329,9 @@ export function createRenderer(canvas, config) {
    * @param {string} color
    * @param {{ x: number, y: number, z?: number } | null} reach  where the pitch crosses the plate
    * @param {number} load  0 to 1: his leg kick and stride as the pitch comes in
+   * @param {{ side: number, forward: number }} waggle  how far you've tipped the bat (degrees)
    */
-  function drawBatter(now, color, reach, load) {
+  function drawBatter(now, color, reach, load, waggle) {
     const { stands } = config.batter;
     // Where the pitch crosses the plate, around where he stands.
     const ball = reach
@@ -341,7 +342,7 @@ export function createRenderer(canvas, config) {
         ])
       : null;
     const sinceSwing = now - batSwungAt;
-    const pose = batter.pose(sinceSwing, now, ball, load);
+    const pose = batter.pose(sinceSwing, now, ball, load, waggle);
     const place = (p) => to({ x: stands.x + p[0], y: p[1], z: stands.z + p[2] });
     shadowsUnder(pose, place);
     players.drawBatter(ctx, view(), { pose, stands, color });
@@ -664,6 +665,7 @@ export function createRenderer(canvas, config) {
      *   pitchT: number | null,         how far the pitch has travelled (1 = at the plate)
      *   flight: import('./field.js').Flight | null,
      *   batterLoad?: number,           the batter's leg kick and stride, 0 to 1 (index.js)
+     *   batWaggle?: { side: number, forward: number },  how far you've tipped the bat (swing.js)
      *   landings: Array<{ x: number, z: number, kind: 'homer' | 'fair' | 'foul' }>,
      *   batterColor: string,
      *   zone: { mark: { x: number, y: number } | null } | null,  the strike zone, if shown
@@ -677,6 +679,7 @@ export function createRenderer(canvas, config) {
       pitchT,
       flight,
       batterLoad = 0,
+      batWaggle = { side: 0, forward: 0 },
       landings,
       batterColor,
       zone,
@@ -706,7 +709,7 @@ export function createRenderer(canvas, config) {
       }
       // Straight into the stride as the pitch comes; back to the stance gently if he lets it go by.
       load = batterLoad >= load ? batterLoad : Math.max(batterLoad, load - frameS * 1.5);
-      if (batterColor) drawBatter(now, batterColor, reach, load);
+      if (batterColor) drawBatter(now, batterColor, reach, load, batWaggle);
       drawImpacts(now);
       drawMap(flight, landings);
       drawTexts(now);
