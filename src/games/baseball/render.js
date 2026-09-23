@@ -3,14 +3,16 @@
  * the pitcher, your batter, the ball, and a small top-down map of where hits
  * land. Every frame is drawn from scratch; far things first, near things last.
  */
-import { drawBatterArt } from './batter-art.js';
+import { createBatterModel } from './batter-model.js';
 import { CONTACT_AT, createBatter } from './batter.js';
 import { fenceAt, pitchPosition, project, seatsHeight, toFeet } from './field.js';
 import { drawFigure } from './figure.js';
 import { pitcherPose } from './pitcher.js';
 
 /** How long the bat's swoosh lingers, ms. */
-const TRAIL_MS = 70;
+const TRAIL_MS = 80;
+/** How long the flash of contact lasts, ms. */
+const IMPACT_MS = 260;
 
 const COLORS = {
   skyTop: '#8fc8f0',
@@ -46,6 +48,7 @@ export function createRenderer(canvas, config) {
   /** The fence's distance (m) at an angle, in degrees out from home plate. */
   const fence = (angleDeg) => fenceAt(angleDeg, config);
   const batter = createBatter(config.batter);
+  const batterModel = createBatterModel();
   let size = { width: 0, height: 0 };
   /** @type {Array<{ text: string, at: number, kind: keyof typeof COLORS.text }>} */
   let texts = [];
@@ -57,6 +60,9 @@ export function createRenderer(canvas, config) {
    */
   let lift = 0;
   let lastDrawAt = null;
+  /** Flashes of contact: when, where the ball was hit, and how well (0 to 1). */
+  /** @type {Array<{ at: number, point: { x: number, y: number, z?: number }, quality: number }>} */
+  let impacts = [];
   /** Where the bat has just been during a swing (screen points), for its swoosh. */
   let batTrail =
     /** @type {Array<{ at: number, hands: { x: number, y: number }, tip: { x: number, y: number } }>} */ ([]);
@@ -316,8 +322,8 @@ export function createRenderer(canvas, config) {
 
   /**
    * Your batter, in the left-hand batter's box, in your player colour
-   * (batter.js has the swing, batter-art.js draws him). He's drawn flat, as
-   * the camera sees him, scaled to where he stands.
+   * (batter.js has the swing, batter-model.js is the 3D player). He stands in
+   * the same 3D ballpark, seen through the same camera as everything else.
    *
    * @param {number} now
    * @param {string} color
@@ -325,29 +331,45 @@ export function createRenderer(canvas, config) {
    * @param {number} load  0 to 1: his leg kick and stride as the pitch comes in
    */
   function drawBatter(now, color, reach, load) {
-    const feet = to(config.batter.stands);
-    const perUnit = feet.scale / 200;
-    // Where the pitch crosses the plate, in his art units.
-    let ball = null;
-    if (reach) {
-      const at = to({ x: reach.x, y: reach.y, z: reach.z ?? 0 });
-      ball = /** @type {[number, number]} */ ([
-        (at.x - feet.x) / perUnit,
-        (at.y - feet.y) / perUnit,
-      ]);
-    }
+    const { stands } = config.batter;
+    // Where the pitch crosses the plate, around where he stands.
+    const ball = reach
+      ? /** @type {[number, number, number]} */ ([
+          reach.x - stands.x,
+          reach.y,
+          (reach.z ?? 0) - stands.z,
+        ])
+      : null;
     const sinceSwing = now - batSwungAt;
     const pose = batter.pose(sinceSwing, now, ball, load);
-    drawBatterArt(ctx, pose, { x: feet.x, y: feet.y, perUnit, jersey: color });
-    // Remember where the bat has just been while he swings, for the swoosh behind it.
-    const onScreen = (p) => ({ x: feet.x + p[0] * perUnit, y: feet.y + p[1] * perUnit });
-    // Only while the bat sweeps across the plate in full view, through contact:
-    // when it points towards or away from us, a swoosh would just be a smear.
+    const place = (p) => to({ x: stands.x + p[0], y: p[1], z: stands.z + p[2] });
+    // A soft shadow on the dirt under each foot.
+    ctx.fillStyle = COLORS.shadow;
+    for (const side of ['l', 'r']) {
+      const heel = pose[`${side}Heel`];
+      const toe = pose[`${side}Toe`];
+      const under = place([(heel[0] + toe[0]) / 2, 0, (heel[2] + toe[2]) / 2]);
+      ctx.beginPath();
+      ctx.ellipse(under.x, under.y, 0.2 * under.scale, 0.05 * under.scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    batterModel.draw(ctx, pose, {
+      width: size.width,
+      height: size.height,
+      ratio: window.devicePixelRatio || 1,
+      stands,
+      camera: config.field.camera,
+      lift,
+      jersey: color,
+    });
+    // Remember where the bat has just been while he swings, for the swoosh
+    // behind it: only while it sweeps across the plate through contact (when
+    // it points towards or away from us, a swoosh would just be a smear).
     const { swingMs, startAt } = config.batter;
     const moment = startAt + (1 - startAt) * (sinceSwing / swingMs);
-    const batLength = Math.hypot(pose.batTip[0] - pose.lHand[0], pose.batTip[1] - pose.lHand[1]);
-    if (moment >= CONTACT_AT - 0.01 && moment <= CONTACT_AT + 0.13 && batLength > 120) {
-      batTrail.push({ at: now, hands: onScreen(pose.lHand), tip: onScreen(pose.batTip) });
+    const across = Math.abs(pose.bat[2]) < 0.7;
+    if (moment >= CONTACT_AT - 0.05 && moment <= CONTACT_AT + 0.15 && across) {
+      batTrail.push({ at: now, hands: place(pose.lHand), tip: place(pose.batTip) });
     } else {
       batTrail = [];
     }
@@ -356,7 +378,61 @@ export function createRenderer(canvas, config) {
   }
 
   /**
-   * A quick white swoosh where the bat has just swept through, like Wii
+   * The flash of contact, like Wii Sports: a white-hot burst where bat meets
+   * ball, yellow and orange spikes shooting out, and speed lines, all over in
+   * a quarter of a second. Better contact makes a bigger burst.
+   */
+  function drawImpacts(now) {
+    impacts = impacts.filter((hit) => now - hit.at < IMPACT_MS);
+    for (const hit of impacts) {
+      const k = (now - hit.at) / IMPACT_MS;
+      const at = to({ x: hit.point.x, y: hit.point.y, z: hit.point.z ?? 0 });
+      const size = at.scale * (0.35 + 0.35 * hit.quality);
+      const grow = 1 - (1 - k) ** 3;
+      ctx.save();
+      ctx.translate(at.x, at.y);
+      // Spikes: long thin triangles out from the middle, alternating colours.
+      const spikes = 14;
+      for (let i = 0; i < spikes; i++) {
+        const angle = (i / spikes) * Math.PI * 2 + 0.3;
+        const long = size * (i % 2 ? 0.7 : 1.15) * (0.4 + 0.8 * grow);
+        const wide = size * 0.09 * (1 - k);
+        ctx.fillStyle = i % 2 ? `rgb(255 150 40 / ${1 - k})` : `rgb(255 222 70 / ${1 - k})`;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle + Math.PI / 2) * wide, Math.sin(angle + Math.PI / 2) * wide);
+        ctx.lineTo(Math.cos(angle) * long, Math.sin(angle) * long);
+        ctx.lineTo(Math.cos(angle - Math.PI / 2) * wide, Math.sin(angle - Math.PI / 2) * wide);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Speed lines: short white streaks flying out past the spikes.
+      ctx.strokeStyle = `rgb(255 255 255 / ${0.9 * (1 - k)})`;
+      ctx.lineWidth = Math.max(1.5, size * 0.025);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + 0.1;
+        const from = size * (0.9 + 0.9 * grow);
+        const to2 = from + size * 0.35;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle) * from, Math.sin(angle) * from);
+        ctx.lineTo(Math.cos(angle) * to2, Math.sin(angle) * to2);
+        ctx.stroke();
+      }
+      // The white-hot middle, glowing out to yellow.
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.55);
+      glow.addColorStop(0, `rgb(255 255 255 / ${1 - k * 0.7})`);
+      glow.addColorStop(0.45, `rgb(255 240 150 / ${0.9 * (1 - k)})`);
+      glow.addColorStop(1, 'rgb(255 200 60 / 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /**
+   * A quick golden swoosh where the bat has just swept through, like Wii
    * Sports: it shows how fast the bat is moving, and fades in a blink.
    */
   function drawBatTrail(now) {
@@ -364,7 +440,7 @@ export function createRenderer(canvas, config) {
     for (let i = 1; i < batTrail.length; i++) {
       const [a, b] = [batTrail[i - 1], batTrail[i]];
       const fade = 1 - (now - a.at) / TRAIL_MS;
-      ctx.fillStyle = `rgb(255 255 255 / ${0.3 * fade})`;
+      ctx.fillStyle = `rgb(255 214 110 / ${0.45 * fade})`;
       ctx.beginPath();
       const inner = [along(a.hands, a.tip, 0.4), along(b.hands, b.tip, 0.4)];
       ctx.moveTo(inner[0].x, inner[0].y);
@@ -389,10 +465,10 @@ export function createRenderer(canvas, config) {
     const w = b.x - a.x;
     const h = b.y - a.y;
     ctx.save();
-    ctx.fillStyle = 'rgb(255 255 255 / 0.12)';
+    ctx.fillStyle = 'rgb(255 255 255 / 0.06)';
     ctx.fillRect(a.x, a.y, w, h);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgb(255 255 255 / 0.35)';
+    ctx.strokeStyle = 'rgb(255 255 255 / 0.22)';
     ctx.beginPath();
     for (const k of [1 / 3, 2 / 3]) {
       ctx.moveTo(a.x + w * k, a.y);
@@ -564,6 +640,11 @@ export function createRenderer(canvas, config) {
   return {
     resize,
 
+    /** A flash of contact where the ball was hit (see drawImpacts). */
+    impact(now, point, quality = 1) {
+      impacts.push({ at: now, point, quality });
+    },
+
     /** Starts the batter's swing. */
     swingBat(now) {
       batSwungAt = now;
@@ -582,6 +663,7 @@ export function createRenderer(canvas, config) {
 
     shift(ms) {
       cheerAt += ms;
+      impacts = impacts.map((hit) => ({ ...hit, at: hit.at + ms }));
       texts = texts.map((t) => ({ ...t, at: t.at + ms }));
       if (Number.isFinite(batSwungAt)) batSwungAt += ms;
     },
@@ -642,6 +724,7 @@ export function createRenderer(canvas, config) {
       // Straight into the stride as the pitch comes; back to the stance gently if he lets it go by.
       load = batterLoad >= load ? batterLoad : Math.max(batterLoad, load - frameS * 1.5);
       if (batterColor) drawBatter(now, batterColor, reach, load);
+      drawImpacts(now);
       drawMap(flight, landings);
       drawTexts(now);
     },

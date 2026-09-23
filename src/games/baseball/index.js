@@ -8,9 +8,8 @@
  *   field.js   the ballpark and the ball: pitches, hits, flight (tested)
  *   swing.js   spotting a swing and when it really happened (tested)
  *   pitcher.js the pitcher's delivery, as key poses
- *   batter.js  your batter's swing, played from a real swing (tested)
- *   swing-frames.js  that swing's poses, traced from a slow-motion video
- *   batter-art.js    drawing your batter in helmet, jersey, and gloves
+ *   batter.js  your batter's swing, the Wii Sports way (tested)
+ *   batter-model.js  your batter as a 3D cartoon player (three.js)
  *   figure.js  drawing and animating the pitcher
  *   render.js  drawing the ballpark, the people, and the ball
  *   sounds.js  sound effects, made with the shared synthesizer
@@ -223,7 +222,7 @@ export const CONFIG = {
      * enough that the pitch visibly grows as it comes at you (which is how
      * you judge when to swing), far enough to see the pitcher clearly.
      */
-    camera: { height: 1.5, behind: 4.5, focal: 1.5, horizon: 0.45 },
+    camera: { height: 1.15, behind: 3.0, focal: 1.5, horizon: 0.34 },
   },
 
   vibration: {
@@ -503,6 +502,7 @@ function createSession(container, controller) {
     pitch.stageAt = now;
     stats.hits += pitch.contact.foul ? 0 : 1;
     sounds.crack(pitch.contact.quality);
+    renderer.impact(now, pitch.path.target, pitch.contact.quality);
     controller.vibrate(player.id, CONFIG.vibration.hit);
     if (Math.abs(pitch.contact.error) <= CONFIG.timing.perfectMs) {
       renderer.text('Perfect!', now, 'timing');
