@@ -304,8 +304,8 @@ you can.
   it. Swing speed adds a little distance. The ball flies with gravity and air resistance.
 - **A real ballpark**, in feet: the fence is 330 ft down the lines and 400 ft to centre, so pulled
   home runs are easier, like the real thing. The stands behind it are full of fans (randomised
-  shirts and skin tones), who jump up and cheer when you hit one out, and a home run comes down in
-  the seats.
+  shirts and skin tones), who jump up and cheer when you hit one out; a home run disappears into
+  the crowd when it lands in the seats.
 - **The pitcher** has a full delivery: set, leg kick, stride, arm cocked, over-the-top release,
   and follow-through, and the ball leaves from his hand. He throws **fastballs, sinkers, sliders,
   curveballs, and changeups**, each with its own speed and movement (the first three pitches are
@@ -315,9 +315,11 @@ you can.
   matters.
 - **Your batter**, in your player colour, stands side-on in the box facing the plate, front
   shoulder to the pitcher, with a bat waggle. He's a 3D skeleton seen through the same camera as
-  the ballpark. His swing is a chain, like a real one: the hips turn first, the shoulders follow,
-  and the bat whips round at a fixed length in a true arc, fastest through contact and slowing
-  into the follow-through ([`batter.js`](src/games/baseball/batter.js)).
+  the ballpark. His swing follows a real sequence: stance, stride with the bat laid back, launch,
+  contact with the front leg firm and the back heel up, extension, and a follow-through with the
+  bat wrapped behind the neck. It's a chain, like a real swing: the hips turn first, the shoulders
+  follow, and the bat whips round at a fixed length in a true arc, fastest through contact and
+  slowing into the follow-through ([`batter.js`](src/games/baseball/batter.js)).
 - The camera sits behind home plate, close enough that the pitch visibly grows as it comes in,
   and tilts up to follow a hit. A small top-down map shows where every hit landed.
 - Results show home runs, hits, longest and total distance, with personal bests for home runs
@@ -334,6 +336,9 @@ How a swing is spotted and timed ([`swing.js`](src/games/baseball/swing.js)):
 
 - **Spotting it:** the gyroscope's _total_ spin speed (all three axes), so any grip works. A swing
   is a spike past 500°/s, and the moment of fastest spin is when the bat meets the ball.
+- **Ignoring the load:** cocking the bat back before a swing is a quick spike too, just before the
+  real one. After each spike the detector waits a moment (`swing.settleMs`) and keeps the
+  **strongest**, so the load isn't mistaken for an early swing.
 - **Timing it despite the network:** each phone sample carries the phone's own timestamp. The
   console keeps the smallest "arrived − measured" it has ever seen, which is the difference between
   the two clocks plus the quickest possible trip, and uses it to convert the swing's phone time to
