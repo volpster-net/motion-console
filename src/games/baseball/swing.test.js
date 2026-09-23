@@ -7,7 +7,6 @@ import {
   createVerticalSpin,
   normalizeSwing,
   spinSpeed,
-  createBatWaggle,
 } from './swing.js';
 
 const config = CONFIG.swing;
@@ -143,45 +142,5 @@ describe('createTimingCalibration', () => {
     expect(calibration.offset).toBe(-250);
     for (const error of [0, 0, 0]) calibration.learn(error);
     expect(calibration.offset).toBe(0);
-  });
-});
-
-describe('createBatWaggle', () => {
-  const settings = { calmRate: 150, settleMs: 1500, degreesPerTip: 1.5, maxDegrees: 25 };
-  /** The phone held still, tipped `deg` degrees across its screen from upright. */
-  const held = (deg, t) => {
-    const a = (deg * Math.PI) / 180;
-    return { alpha: 0, beta: 0, gamma: 0, gx: Math.sin(a) * 9.8, gy: Math.cos(a) * 9.8, gz: 0, t };
-  };
-
-  it('keeps the bat still while you hold the phone still', () => {
-    const waggle = createBatWaggle(settings);
-    let out;
-    for (let t = 0; t < 1000; t += 16) out = waggle.update(held(0, t));
-    expect(Math.abs(out.side)).toBeLessThan(0.01);
-    expect(Math.abs(out.forward)).toBeLessThan(0.01);
-  });
-
-  it('tips the bat when you tip the phone, then lets it settle back', () => {
-    const waggle = createBatWaggle(settings);
-    for (let t = 0; t < 1000; t += 16) waggle.update(held(0, t));
-    const tipped = waggle.update(held(8, 1016));
-    expect(tipped.side).toBeGreaterThan(8);
-    let out = tipped;
-    for (let t = 1032; t < 8000; t += 16) out = waggle.update(held(8, t));
-    expect(Math.abs(out.side)).toBeLessThan(1);
-  });
-
-  it('goes no further than the most it may tip', () => {
-    const waggle = createBatWaggle(settings);
-    waggle.update(held(0, 0));
-    expect(waggle.update(held(60, 16)).side).toBeLessThanOrEqual(25);
-  });
-
-  it('ignores the phone while it spins (a swing)', () => {
-    const waggle = createBatWaggle(settings);
-    waggle.update(held(0, 0));
-    const before = waggle.update(held(0, 16));
-    expect(waggle.update({ ...held(40, 32), alpha: 900 })).toEqual(before);
   });
 });

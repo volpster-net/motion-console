@@ -121,7 +121,9 @@ export function createSynth({ volume }) {
       envelope.gain.setValueAtTime(gain, start);
       envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
       source.connect(shaper).connect(envelope).connect(master);
-      source.start(start);
+      // Start somewhere random in the static, so bursts played together don't
+      // cancel each other out, and no two sound quite the same.
+      source.start(start, Math.random() * Math.max(0, 1 - duration - 0.05));
       source.stop(start + duration + 0.02);
     },
 

@@ -25,51 +25,52 @@ export function createSounds({ volume }) {
     },
 
     /**
-     * Bat on ball: the crack of a wooden bat, built in layers like the real
-     * thing. A split-second snap of the ball hitting, the wood ringing with a
-     * short knock, a thump you feel in your chest, then the sound echoing
-     * back off the stands. Dead on (quality 1) is loud, sharp and high; a
-     * poor hit off the end or handle is a duller, buzzing "thunk".
+     * Bat on ball: the crack of a wooden bat, matched to recordings of real
+     * wood bats. A real crack is over in a flash (about a hundredth of a
+     * second), has almost no bass, and is a bright click centred around
+     * 1,500 Hz, followed by the bat ringing briefly at about 1,700 Hz.
+     * (Checked by measuring recordings of real bats against this one.)
+     * Dead on (quality 1) is loud and rings clean; a poor hit is quieter,
+     * duller and barely rings.
      *
      * @param {number} quality  0 (barely) to 1 (dead on)
      */
     crack(quality) {
       const q = Math.min(1, Math.max(0, quality));
-      // The snap: a very short, bright burst.
-      noise({ duration: 0.012 + q * 0.008, gain: 0.5 + q * 0.4, cutoff: 3000, filter: 'highpass' });
-      // The wood ringing: static tuned to ring like a knock on wood, higher and
-      // cleaner for a good hit.
+      // The click: very short bursts of static, spread from about 600 to
+      // 5,000 Hz like a real crack, loudest around 1,000 to 2,000 Hz.
       noise({
-        duration: 0.07 + q * 0.05,
-        gain: 0.55 + q * 0.3,
-        cutoff: 900 + q * 1100,
+        duration: 0.02,
+        gain: 3.0 + q * 0.9,
+        cutoff: 1650,
         filter: 'bandpass',
-        resonance: 4 + q * 6,
+        resonance: 1.4,
       });
-      tone({
-        freq: 520 + q * 380,
-        endFreq: 380 + q * 200,
-        type: 'triangle',
-        duration: 0.07,
-        gain: 0.25 + q * 0.15,
+      noise({
+        duration: 0.02,
+        gain: 4.2 + q * 1.3,
+        cutoff: 950,
+        filter: 'bandpass',
+        resonance: 1.6,
       });
-      // The thump.
-      tone({ freq: 150, endFreq: 70, type: 'sine', duration: 0.12, gain: 0.35 + q * 0.25 });
-      // A poor hit buzzes (the bat vibrating in your hands).
-      if (q < 0.5) {
-        tone({ freq: 180, endFreq: 140, type: 'sawtooth', duration: 0.14, gain: (0.5 - q) * 0.25 });
-      }
-      // The echo off the stands, a moment later, softer and duller each time.
-      [0.11, 0.23].forEach((delay, i) =>
-        noise({
-          duration: 0.09,
-          gain: (0.18 + q * 0.12) / (i + 1),
-          cutoff: 1400 - i * 400,
-          filter: 'bandpass',
-          resonance: 3,
-          delay,
-        }),
-      );
+      noise({
+        duration: 0.012,
+        gain: 0.6 + q * 0.4,
+        cutoff: 3000,
+        filter: 'bandpass',
+        resonance: 2.5,
+      });
+      // The bat ringing: a brief tuned ring at about 1,700 Hz, and a fainter one
+      // higher up; a clean hit rings a little longer and clearer.
+      noise({
+        duration: 0.025 + q * 0.03,
+        gain: 0.05 + q * 0.09,
+        cutoff: 1720,
+        filter: 'bandpass',
+        resonance: 14,
+      });
+      tone({ freq: 1720, type: 'sine', duration: 0.025 + q * 0.03, gain: 0.008 + q * 0.02 });
+      tone({ freq: 2500, type: 'sine', duration: 0.02 + q * 0.02, gain: 0.004 + q * 0.01 });
     },
 
     /** Swinging through nothing. */
