@@ -1,0 +1,203 @@
+/* The play area. Everything inside is positioned over the canvas. */
+.hr {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+  background: #8fc8f0;
+  user-select: none;
+}
+
+.hr-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Top bar: home runs, pitch count, longest hit. */
+.hr-hud {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 10px 20px;
+  background: rgb(255 255 255 / 0.85);
+  border-bottom: 1px solid var(--line);
+}
+
+.hr-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hr-stat small {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hr-stat b {
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-mid {
+  justify-self: center;
+}
+
+.hr-end {
+  justify-self: end;
+}
+
+/* Title, countdown, and results sit in the middle, over the canvas. */
+.hr-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 72px 24px 24px;
+  text-align: center;
+  background: rgb(238 241 245 / 0.82);
+}
+
+.hr[data-phase='batting'] .hr-screen {
+  display: none;
+}
+
+.hr[data-phase='countdown'] .hr-screen {
+  background: none;
+}
+
+.hr-screen h1 {
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.hr-screen p {
+  max-width: 540px;
+  color: var(--muted);
+}
+
+.hr-rules b {
+  color: var(--ink);
+}
+
+.hr-cta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink) !important;
+  animation: hr-pulse 1.6s ease-in-out infinite;
+}
+
+.hr-player {
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--player);
+  color: #fff;
+  font-size: 16px;
+}
+
+.hr-hint {
+  font-size: 14px;
+}
+
+.hr-count {
+  font-size: clamp(96px, 16vw, 180px);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ink) !important;
+  animation: hr-pop 0.4s ease-out;
+}
+
+.hr-final {
+  font-size: clamp(64px, 10vw, 120px) !important;
+  line-height: 1;
+}
+
+.hr-best {
+  font-weight: 800;
+  color: var(--ok) !important;
+}
+
+.hr-results {
+  display: grid;
+  grid-template-columns: repeat(5, auto);
+  gap: 8px 28px;
+  margin: 8px 0 0;
+}
+
+.hr-results dt {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hr-results dd {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .hr-results {
+    grid-template-columns: repeat(3, auto);
+  }
+}
+
+.hr-sound {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@keyframes hr-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes hr-pop {
+  from {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-cta,
+  .hr-count {
+    animation: none;
+  }
+}
+
+.hr-final span {
+  font-size: 0.4em;
+  color: var(--muted);
+}

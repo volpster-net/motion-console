@@ -11,9 +11,9 @@ gyroscope becomes a pointer, with buttons.
   <img src="docs/controller.png" alt="Controller page on a phone with a sensor readout, Re-center button and a large Fire button" width="150" />
 </p>
 
-**Status: Milestone 5.** After pairing, the console shows a **launcher menu**: point at a game and
-pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Two games so
-far: **Target Practice** (hit rings before they vanish) and **Hoops** (hold Fire,
+**Status: Milestone 6.** After pairing, the console shows a **launcher menu**: point at a game and
+pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Three games
+so far: **Home Run Derby** (swing your phone like a bat), **Target Practice** (hit rings before they vanish) and **Hoops** (hold Fire,
 swing, and let go to shoot baskets, Wii Sports Resort style). New games plug into the menu by adding a folder.
 
 ## How it works
@@ -292,6 +292,36 @@ sets which swing speeds count as weakest and strongest, and how wide the sweet s
 meter shows real swing speeds to tune from. `CONFIG` also holds the court (real metres), scoring,
 and bounciness. The physics in `court.js` and the swing memory in `toss.js` are unit-tested.
 
+### Home Run Derby
+
+Wii Sports batting: grip the phone like a bat, both hands, over your shoulder, and **swing when
+the pitch reaches the plate**. No buttons. Ten pitches, getting quicker; hit as many home runs as
+you can.
+
+- **Timing is everything.** Dead on sends a high, hard drive over the 100 m fence. Early pulls the
+  ball to left field, late pushes it to right, very early or late goes foul, and way off is a swing
+  and a miss. Swing speed adds a little distance. The ball flies with gravity and air resistance.
+- The view is from behind home plate: the pitch grows as it comes at you, a dashed strike zone
+  shows where to meet it, and the view tilts up to follow a hit, like the Wii's camera. A small
+  top-down map shows where every hit landed.
+- Results show home runs, hits, longest and total distance, with personal bests for home runs
+  and for the longest homer.
+
+How a swing is spotted and timed ([`swing.js`](src/games/baseball/swing.js)):
+
+- **Spotting it:** the gyroscope's _total_ spin speed (all three axes), so any grip works. A swing
+  is a spike past 500°/s, and the moment of fastest spin is when the bat meets the ball.
+- **Timing it despite the network:** each phone sample carries the phone's own timestamp. The
+  console keeps the smallest "arrived − measured" it has ever seen, which is the difference between
+  the two clocks plus the quickest possible trip, and uses it to convert the swing's phone time to
+  console time. So a swing is judged by when it _happened_, not by when its message arrived, and
+  network jitter doesn't turn a perfect swing into a late one.
+
+**Tuning the feel.** `CONFIG` at the top of
+[`src/games/baseball/index.js`](src/games/baseball/index.js): pitch speeds, the timing window
+(`perfectMs`, `windowMs`), `timing.biasMs` if swings consistently register early or late, exit
+speeds and launch angles, and air drag. The hit physics and the swing detector are unit-tested.
+
 ### Shared by games
 
 `src/games/shared/` holds what games have in common: `synth.js` (Web Audio sound effects from
@@ -337,6 +367,13 @@ src/
       index.js              CONFIG, screens, and the game loop
       round.js              rules: spawning, difficulty, scoring (pure, tested)
       render.js             canvas drawing: targets, effects, crosshair
+      sounds.js             sound effects
+    baseball/               Milestone 6: Home Run Derby
+      meta.js               name, description, and tile art for the menu
+      index.js              CONFIG, screens, pitches, and the game loop
+      field.js              pitches, timing → contact, ball flight with drag (pure, tested)
+      swing.js              swing detection and phone-clock matching (pure, tested)
+      render.js             canvas drawing: ballpark, pitcher, bat, ball, field map
       sounds.js             sound effects
     basketball/             Milestone 5: Hoops
       meta.js               name, description, and tile art for the menu
@@ -435,6 +472,7 @@ Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, defau
 - **Console reload reassigns slots.** Controllers reconnect automatically but may swap slot numbers.
 - **Swing speeds vary by person.** Hoops' swing range is a starting guess; the power meter shows
   real swing speeds to tune it from.
-- Next milestones: a baseball home-run derby (swing timing, which needs network-delay
-  compensation), multiplayer, and controller-side game UIs
+- **Swing timing leans on an assumed quickest trip** (`timing.quickestTripMs`, 30 ms). If swings
+  feel consistently early or late on your network, nudge `timing.biasMs`.
+- Next milestones: multiplayer (take turns at bat, shared shootouts), and controller-side game UIs
   (`sys/channel` already tells phones which channel is active).
