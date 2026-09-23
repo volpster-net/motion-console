@@ -306,22 +306,22 @@ export function createRenderer(canvas, config) {
   }
 
   /**
-   * The ball in your hands, at the bottom of the screen. It rests low when
-   * you're ready, lifts and glows when you're set, and is gone for a moment
-   * after a shot (it's in the air).
+   * The ball in your hands, at the bottom of the screen. It rests low until
+   * you grab it (hold Fire), lifts and glows while held, and is gone for a
+   * moment after a throw (it's in the air).
    *
-   * @param {import('./shot.js').ShotStage} stage
+   * @param {'ready' | 'held' | 'thrown'} stage
    * @param {number} now
    */
   function drawHands(stage, now) {
-    if (stage === 'cooldown') return;
-    const raised = stage === 'set' || stage === 'pushing';
+    if (stage === 'thrown') return;
+    const raised = stage === 'held';
     const r = size.height * 0.1;
     const x = size.width / 2;
     const y = size.height - (raised ? r * 1.6 : r * 0.55);
     ctx.save();
     if (raised) {
-      // A pulsing glow: you're set, now push and snap.
+      // A pulsing glow: you've got the ball, now swing and let go.
       ctx.shadowColor = '#23b566';
       ctx.shadowBlur = r * (0.5 + 0.3 * Math.sin(now / 120));
     }
@@ -335,7 +335,7 @@ export function createRenderer(canvas, config) {
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#ffffff';
     ctx.fillStyle = raised ? '#23b566' : '#6b7785';
-    const label = raised ? 'Set! Push up and snap' : 'Raise and cock your wrist to set';
+    const label = raised ? 'Swing up and let go!' : 'Hold Fire to grab the ball';
     const labelY = y - r - size.height * 0.02;
     ctx.strokeText(label, x, labelY);
     ctx.fillText(label, x, labelY);
@@ -415,7 +415,7 @@ export function createRenderer(canvas, config) {
      *   hoopX: number,
      *   balls: import('./court.js').Ball[],
      *   aim: { x: number, color: string, locked: boolean } | null,
-     *   hands: import('./shot.js').ShotStage | null,
+     *   hands: 'ready' | 'held' | 'thrown' | null,
      *   onFire: boolean,
      * }} scene
      */

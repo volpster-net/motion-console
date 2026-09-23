@@ -1,13 +1,12 @@
 /**
  * Hoops: an arcade basketball shootout. Aim left and right with your phone,
- * then shoot with a real shooting motion: set, push, snap. Make as many
- * baskets as you can in 60 seconds.
+ * then throw the Wii Sports Resort way: hold Fire to grab the ball, swing
+ * your arm up, and let go to shoot. Make as many baskets as you can in 60 seconds.
  *
  * Files in this folder:
  *   index.js   this file: settings, screens, shooting, and the game loop
  *   court.js   the court and the ball's flight: physics, bounces, scoring (tested)
- *   shot.js    spotting the shooting motion in the phone's movement (tested)
- *   tuning.js  the shot-tuning graph (press D)
+ *   toss.js    measuring the throwing swing (tested)
  *   render.js  drawing the court, hoop, and balls on a canvas
  *   sounds.js  sound effects, made with the shared synthesizer
  */
@@ -26,8 +25,7 @@ import {
   shotResult,
   stepBall,
 } from './court.js';
-import { createShotDetector, normalizePush } from './shot.js';
-import { createShotTuning } from './tuning.js';
+import { createSwingMemory, normalizeSwing } from './toss.js';
 import meta from './meta.js';
 import { createRenderer } from './render.js';
 import { createSounds } from './sounds.js';
@@ -58,28 +56,18 @@ export const CONFIG = {
   },
 
   /**
-   * The shooting motion: set, push, snap (shot.js explains each step).
-   * These are starting guesses. Press D in the game to see your real
-   * numbers on a graph, then move these to suit.
+   * The throw, Wii Sports Resort style: hold Fire to grab the ball, swing
+   * your arm up, and let go of Fire to release. How fast the phone was
+   * swinging up as you let go sets the power (toss.js explains how).
    */
-  shot: {
-    /** SET: the top edge must point at least this many degrees above level… */
-    setTilt: 35,
-    /** …for this long. */
-    setHoldMs: 120,
-    /** Lowering the phone below this lets go of the set. */
-    unsetTilt: 20,
-    /** PUSH: an upward push harder than this (m/s²) starts the shot. */
-    pushStart: 3,
-    /** SNAP: the wrist flicking forwards faster than this (°/s) releases it… */
-    snapRate: 250,
-    /** …and it must come within this long of the push starting. */
-    windowMs: 600,
-    /** Ignore movement this long after a shot (bringing the phone back down). */
-    cooldownMs: 500,
-    /** Pushes (m/s²) that count as the weakest (0) and strongest (1) shots. */
-    weakest: 4,
-    strongest: 24,
+  toss: {
+    /** Look this far back from the moment you let go for the fastest swing. */
+    windowMs: 250,
+    /** Swing speeds (°/s, the phone tipping up) that count as the weakest (0) and strongest (1) throws. */
+    weakest: 100,
+    strongest: 900,
+    /** Letting go while swinging slower than this is a limp toss, with a hint to swing. */
+    minSwing: 120,
     /** The perfect-power spot on that 0-to-1 scale… */
     sweetSpot: 0.5,
     /** …and how far either side of it still flies perfectly. */
@@ -109,7 +97,7 @@ export const CONFIG = {
     /** From your hands to the middle of the rim. */
     distance: 4,
     releaseHeight: 1.5,
-    /** Every shot leaves at this upward angle; the arm push sets the speed. */
+    /** Every shot leaves at this upward angle; the swing sets the speed. */
     launchAngleDeg: 60,
     board: {
       /** Space between the back of the rim and the board. */
@@ -140,8 +128,8 @@ export const CONFIG = {
   },
 
   vibration: {
-    /** A tiny tick when you're set, so you can feel it without looking. */
-    set: 12,
+    /** A tiny tick when you grab the ball. */
+    grab: 12,
     shot: 15,
     make: [40, 30, 60],
     swish: [60, 30, 60, 30, 100],
@@ -252,7 +240,7 @@ function createSession(container, controller) {
   const cleanups = [];
 
   // The sweet spot on the power meter.
-  const { sweetSpot, sweetBand } = CONFIG.shot;
+  const { sweetSpot, sweetBand } = CONFIG.toss;
   meter.sweet.style.left = `${(sweetSpot - sweetBand) * 100}%`;
   meter.sweet.style.width = `${sweetBand * 2 * 100}%`;
 
@@ -317,9 +305,9 @@ function createSession(container, controller) {
       <h1>${name}</h1>
       <p>${description}</p>
       <p class="bb-rules">
-        Point your phone to line up with the rim. Then shoot like it's the ball:
-        <b>raise it and cock your wrist back</b>, <b>push your arm up</b>, and
-        <b>snap your wrist forwards</b> to release. Push harder to shoot further.
+        Point your phone to line up with the rim. <b>Hold Fire</b> to grab the ball,
+        <b>swing your arm up</b>, and <b>let go of Fire</b> to shoot. Swing harder to
+        shoot further.
         A basket is <b>${CONFIG.scoring.basket}</b>, a swish (nothing but net) is <b>${CONFIG.scoring.swish}</b>.
         Make <b>${CONFIG.scoring.onFireFrom}</b> in a row and you're on fire: <b>×${CONFIG.scoring.onFireMultiplier}</b>.
       </p>
@@ -328,7 +316,7 @@ function createSession(container, controller) {
           ? `<span class="bb-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Pull the trigger to start`
           : 'Scan the QR code with your phone to join'
       }</p>
-      <p class="bb-hint">Press D on this screen to see your shooting motion on a graph.</p>`;
+      <p class="bb-hint">Just like Wii Sports Resort: a smooth, medium swing is all it takes.</p>`;
   }
 
   function startCountdown(now) {
@@ -337,6 +325,9 @@ function createSession(container, controller) {
     stats = freshStats();
     balls = [];
     hoopX = 0;
+    holdingSince = null;
+    pendingRelease = null;
+    lockedAimX = null;
     renderer.clearEffects();
   }
 
@@ -357,6 +348,8 @@ function createSession(container, controller) {
     phase = { name: 'results', at: now };
     root.dataset.phase = 'results';
     chargingSince = null;
+    holdingSince = null;
+    lockedAimX = null;
     sounds.buzzer();
     if (isNewBest) sounds.newBest();
     const accuracy = stats.shots > 0 ? Math.round((stats.makes / stats.shots) * 100) : 0;
@@ -390,8 +383,8 @@ function createSession(container, controller) {
   }
 
   /**
-   * Where the player was aiming when they got set. Raising and cocking the
-   * phone jiggles the aim, so the shot uses the aim from just before.
+   * Where the player was aiming when they grabbed the ball. Swinging the
+   * phone jiggles the aim, so the throw uses the aim from just before.
    */
   let lockedAimX = null;
 
@@ -468,45 +461,52 @@ function createSession(container, controller) {
   let paused = false;
   let pausedAt = 0;
 
-  // Shot detection runs on every motion sample the tracker processes.
-  const detector = createShotDetector(CONFIG.shot);
-  const tuning = createShotTuning({ root, config: CONFIG.shot });
-  cleanups.push(() => tuning.destroy());
-  /** Short hints shown when a shot fizzles. */
-  const FIZZLE_TEXT = { push: 'Push with your arm!', snap: 'Snap your wrist to release!' };
+  // ---- Throwing -----------------------------------------------------------
+  // While the ball is held, remember how fast the phone swings upwards.
+  const swing = createSwingMemory(CONFIG.toss);
+  /** When the active player grabbed the ball (holding Fire), if they have. */
+  let holdingSince = null;
+  /**
+   * Set when Fire is let go. The throw is worked out on the next frame,
+   * after the tracker has caught up on every motion sample that arrived
+   * before the release.
+   */
+  let pendingRelease = null;
 
   cleanups.push(
-    tracker.onMotion((playerId, rates, t, body) => {
-      const player = activePlayer();
-      if (!player || player.id !== playerId) return;
-      tuning.record({ t, tilt: body.tilt, lift: body.lift, snap: -rates.pitch });
-      const event = detector.update({
-        tilt: body.tilt,
-        lift: body.lift,
-        pitchRate: rates.pitch,
-        t,
-      });
-      if (!event) return;
-      tuning.mark(event);
-      const now = performance.now();
-
-      if (event.type === 'set') {
-        lockedAimX = aimX(playerId);
-        controller.vibrate(player.id, CONFIG.vibration.set);
-      } else if (event.type === 'unset') {
-        lockedAimX = null;
-      } else if (event.type === 'fizzle') {
-        lockedAimX = null;
-        if (phase.name === 'playing') renderer.hint(FIZZLE_TEXT[event.missing], now);
-      } else if (event.type === 'shot') {
-        const norm = normalizePush(event.push, CONFIG.shot);
-        tuning.describeShot(event, norm);
-        const targetX = lockedAimX ?? aimX(playerId);
-        lockedAimX = null;
-        shoot(player, norm, targetX, now, `Push ${event.push.toFixed(1)} m/s²`);
-      }
+    tracker.onMotion((playerId, rates, t) => {
+      if (holdingSince !== null && playerId === activePlayer()?.id) swing.add(t, rates.pitch);
     }),
   );
+
+  function grab(player, now) {
+    holdingSince = now;
+    swing.clear();
+    lockedAimX = aimX(player.id);
+    controller.vibrate(player.id, CONFIG.vibration.grab);
+  }
+
+  function release(player, now) {
+    holdingSince = null;
+    pendingRelease = { player, at: now };
+  }
+
+  /** Throws the ball: power from the fastest swing just before letting go. */
+  function throwBall(now) {
+    const { player } = pendingRelease;
+    pendingRelease = null;
+    const speed = swing.peak();
+    if (speed < CONFIG.toss.minSwing) renderer.hint('Swing your arm up as you let go!', now);
+    const targetX = lockedAimX ?? aimX(player.id);
+    lockedAimX = null;
+    shoot(
+      player,
+      normalizeSwing(speed, CONFIG.toss),
+      targetX,
+      now,
+      `Swing ${Math.round(speed)}°/s`,
+    );
+  }
 
   /** May this player use the hold-Fire charged shot? */
   function mayCharge(player) {
@@ -529,14 +529,19 @@ function createSession(container, controller) {
     }),
   );
 
-  /** The trigger: starts rounds, or charges and releases a shot during play. */
+  /** The trigger: starts rounds; during play, holding it grabs the ball and letting go throws. */
   function trigger(player, down) {
     const now = performance.now();
     if (phase.name === 'title' && down) return startCountdown(now);
     if (phase.name === 'results' && down && now - phase.at >= CONFIG.round.resultsLockMs) {
       return startCountdown(now);
     }
-    if (phase.name !== 'playing' || !mayCharge(player)) return;
+    if (phase.name !== 'playing') return;
+    if (!mayCharge(player)) {
+      if (down) grab(player, now);
+      else if (holdingSince !== null) release(player, now);
+      return;
+    }
     if (down) {
       chargingSince = now;
     } else if (chargingSince !== null) {
@@ -584,6 +589,9 @@ function createSession(container, controller) {
       return;
     }
 
+    // Fire was let go since the last frame: throw, now that the swing is fully known.
+    if (pendingRelease) throwBall(now);
+
     const playing = phase.name === 'playing';
     if (playing && !timeUp(now)) {
       const elapsed = now - phase.startedAt;
@@ -613,7 +621,13 @@ function createSession(container, controller) {
     if (timeUp(now) && allDecided) showResults(now);
   }
 
-  /** The crosshair's position, in screen heights: locked in place once the player is set. */
+  /** The ball in the player's hands: just thrown, held, or waiting to be grabbed. */
+  function handsState(now) {
+    if (now - lastShotAt < 400) return 'thrown';
+    return holdingSince !== null || chargingSince !== null ? 'held' : 'ready';
+  }
+
+  /** The crosshair's position, in screen heights: locked in place while the ball is held. */
   function aimScreenX(liveX) {
     if (lockedAimX === null) return liveX;
     const rim = project(
@@ -636,10 +650,9 @@ function createSession(container, controller) {
         aim && phase.name === 'playing'
           ? { x: aimScreenX(aim.x), color: playerColor(player.slot), locked: lockedAimX !== null }
           : null,
-      hands: phase.name === 'playing' ? detector.stage : null,
+      hands: phase.name === 'playing' ? handsState(now) : null,
       onFire: phase.name === 'playing' && onFire(),
     });
-    tuning.draw();
 
     if (chargingSince !== null && phase.name === 'playing') showPower(chargeAt(now), 'Charging…');
 
@@ -689,8 +702,9 @@ function createSession(container, controller) {
       lastShotAt += pausedFor;
       if (chargingSince !== null) chargingSince += pausedFor;
       renderer.shift(pausedFor);
-      detector.reset();
-      lockedAimX = null;
+      if (holdingSince !== null) holdingSince += pausedFor;
+      pendingRelease = null;
+      swing.clear();
       lastFrameAt = null;
       paused = false;
     },
