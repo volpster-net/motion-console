@@ -45,4 +45,24 @@ describe('the swing', () => {
     expect(speed(CONTACT_AT)).toBeGreaterThan(speed(0.95));
     expect(speed(CONTACT_AT)).toBeGreaterThan(0.05);
   });
+
+  it('reaches for the pitch: the bat passes through a high or low ball at contact', () => {
+    // Around the batter: x towards the plate, z towards the pitcher.
+    for (const reach of [
+      [0.8, 0.6, -0.1],
+      [0.8, 1.05, -0.1],
+      [0.65, 0.85, -0.1],
+    ]) {
+      const pose = swingPose(CONTACT_AT, reach);
+      const direction = pose.batTip.map((v, i) => (v - pose.hands[i]) / 0.84);
+      const along = (reach[0] - pose.hands[0]) / direction[0];
+      const barrel = pose.hands.map((v, i) => v + direction[i] * along);
+      expect(distance(barrel, reach)).toBeLessThan(0.03);
+    }
+  });
+
+  it('only adjusts around contact', () => {
+    expect(swingPose(0.2, [0.8, 0.6, -0.1])).toEqual(swingPose(0.2));
+    expect(swingPose(0.9, [0.8, 0.6, -0.1])).toEqual(swingPose(0.9));
+  });
 });

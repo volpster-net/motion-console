@@ -216,7 +216,8 @@ export function launch(contact, config) {
   const across = toRad(contact.sprayDeg);
   const flat = contact.speed * Math.cos(up);
   return {
-    p: { x: contact.location.x, y: contact.location.y, z: 0.3 },
+    // From exactly where the pitch crossed the plate, where the bat met it.
+    p: { x: contact.location.x, y: contact.location.y, z: 0 },
     v: { x: flat * Math.sin(across), y: contact.speed * Math.sin(up), z: flat * Math.cos(across) },
     state: 'flying',
     fair: !contact.foul,

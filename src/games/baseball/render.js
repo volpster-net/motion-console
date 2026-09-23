@@ -313,9 +313,11 @@ export function createRenderer(canvas, config) {
    * (batter.js has the swing). His joints are 3D points around where he
    * stands, seen through the same camera as the rest of the ballpark.
    */
-  function drawBatter(now, color) {
-    const pose = batter.pose(now - batSwungAt, now);
+  function drawBatter(now, color, reach) {
     const { stands } = config.batter;
+    // Where the pitch crosses the plate, relative to where the batter stands.
+    const local = reach ? [reach.x - stands.x, reach.y, (reach.z ?? 0) - stands.z] : null;
+    const pose = batter.pose(now - batSwungAt, now, local);
     const s = to(stands).scale;
     const place = ([x, y, z]) => to({ x: stands.x + x, y, z: stands.z + z });
     drawFigure(ctx, pose, place, s, {
@@ -582,6 +584,7 @@ export function createRenderer(canvas, config) {
      * }} scene
      */
     draw({ now, pitcher, holdingBall, pitch, pitchT, flight, landings, batterColor, zone }) {
+      const reach = pitch ? pitch.target : null;
       if (size.height === 0) return;
       // Follow a hit ball: tilt up just enough to keep it below the top bar, smoothly.
       const frameS = lastDrawAt === null ? 0 : Math.min(0.1, (now - lastDrawAt) / 1000);
@@ -604,7 +607,7 @@ export function createRenderer(canvas, config) {
         // Past the plate, the ball goes on into the catcher's mitt, just behind you.
         if (p.z > -1.5) drawBall(p);
       }
-      drawBatter(now, batterColor);
+      drawBatter(now, batterColor, reach);
       drawMap(flight, landings);
       drawTexts(now);
     },

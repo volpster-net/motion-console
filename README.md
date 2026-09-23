@@ -305,7 +305,8 @@ you can.
   so the game keeps the middle value of your last five swings and judges each swing against it
   (saved in the browser). Pulling the ball means swinging earlier than _you_ usually do.
 - **Pitch location**: pitches cross anywhere in the strike zone, shown above the plate like the TV
-  graphic, with a dot marking where each one crossed. Location nudges the hit, like the real game:
+  graphic, with a dot marking where each one crossed. The batter adjusts his swing to each pitch, so
+  the bat meets the ball right where the dot is, and a hit leaves from that spot. Location nudges the hit, like the real game:
   inside pitches get pulled, outside ones pushed, high ones lifted, low ones hit lower.
 - **A real ballpark**, in feet: the fence is 330 ft down the lines and 400 ft to centre, so pulled
   home runs are easier, like the real thing. The stands behind it are full of fans (randomised

@@ -93,8 +93,8 @@ const KEYS = fillIn([
     shoulderTurn: 35,
     chest: [0.03, 1.32, 0],
     head: [0.1, 1.58, 0.06],
-    hands: [0.32, 1.05, 0.02],
-    batYaw: 10,
+    hands: [0.32, 1.05, -0.1],
+    batYaw: 0,
     batTilt: -6,
     lKnee: [0.07, 0.5, 0.47],
     rKnee: [0.22, 0.42, -0.2],
@@ -244,9 +244,50 @@ function blend(a, b, k) {
   );
 }
 
-/** The pose at moment `t` of the swing (0 to 1); exported for tests. */
-export function swingPose(t) {
-  return bodyFrom(controlsAt(Math.min(1, Math.max(0, t))));
+/**
+ * Adjusts the swing to meet the ball.
+ *
+ * Pitches cross the plate high or low, in or out, so around contact the
+ * hands shift until the part of the bat over the ball's spot passes right
+ * through it. The shift is strongest at contact and fades smoothly either
+ * side, so the rest of the swing is untouched.
+ *
+ * @param {Record<string, any>} c  controls at moment `t`
+ * @param {number} t
+ * @param {number[] | null} reach  where the ball crosses the plate, [x, y, z] around the batter
+ */
+function reachFor(c, t, reach) {
+  if (!reach) return c;
+  const weight = Math.exp(-(((t - CONTACT_AT) / 0.1) ** 2));
+  if (weight < 0.01) return c;
+  // Where the bat is at contact without adjusting, at the ball's distance out over the plate.
+  const contact = controlsAt(CONTACT_AT);
+  const yaw = toRad(contact.batYaw);
+  const tilt = toRad(contact.batTilt);
+  const along = Math.min(
+    BAT,
+    Math.max(BAT * 0.4, (reach[0] - contact.hands[0]) / (Math.cos(tilt) * Math.cos(yaw))),
+  );
+  const barrel = [
+    contact.hands[0] + along * Math.cos(tilt) * Math.cos(yaw),
+    contact.hands[1] + along * Math.sin(tilt),
+    contact.hands[2] + along * Math.cos(tilt) * Math.sin(yaw),
+  ];
+  // Move the hands up/down and in/out by the gap (not along the bat).
+  const shift = [0, (reach[1] - barrel[1]) * weight, (reach[2] - barrel[2]) * weight];
+  return { ...c, hands: add(c.hands, shift) };
+}
+
+/**
+ * The pose at moment `t` of the swing (0 to 1), optionally reaching for a
+ * pitch at `reach` (see reachFor); exported for tests.
+ *
+ * @param {number} t
+ * @param {number[] | null} [reach]
+ */
+export function swingPose(t, reach = null) {
+  const at = Math.min(1, Math.max(0, t));
+  return bodyFrom(reachFor(controlsAt(at), at, reach));
 }
 
 /**
@@ -268,11 +309,12 @@ export function createBatter(timing) {
      *
      * @param {number} sinceSwing  ms since a swing was detected (Infinity if none yet)
      * @param {number} now         ms, for the little bat waggle while waiting
+     * @param {number[] | null} [reach]  where this pitch crosses the plate, around the batter
      */
-    pose(sinceSwing, now) {
+    pose(sinceSwing, now, reach = null) {
       const { swingMs, holdMs, returnMs, startAt } = timing;
       if (sinceSwing < swingMs) {
-        return bodyFrom(controlsAt(startAt + (1 - startAt) * (sinceSwing / swingMs)));
+        return swingPose(startAt + (1 - startAt) * (sinceSwing / swingMs), reach);
       }
       if (sinceSwing < swingMs + holdMs) return bodyFrom(finish);
       if (sinceSwing < swingMs + holdMs + returnMs) {

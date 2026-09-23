@@ -684,10 +684,10 @@ function createSession(container, controller) {
   /**
    * How far along its path to draw the pitch (1 = at the plate), or null.
    *
-   * Just past the plate, the ball slows almost to a stop while a swing's
-   * message could still be on its way from the phone. So when a hit comes in
-   * a moment late, the ball is still right there at the bat, not already in
-   * the catcher's mitt. If nobody swings, it then carries on to the catcher.
+   * At the plate, the ball waits right where it crossed while a swing's
+   * message could still be on its way from the phone. So when a hit comes in a
+   * moment late, the ball is exactly where the strike-zone dot marks it, and
+   * the bat meets it there. If nobody swings, it then carries on to the catcher.
    */
   function shownPitchT(pitch, now) {
     if (pitch.stage === 'windup' || pitch.flight) return null;
@@ -695,8 +695,7 @@ function createSession(container, controller) {
     if (t <= 1) return t;
     const { windowMs, lateGraceMs } = CONFIG.timing;
     const hang = (windowMs + lateGraceMs) / pitch.travelMs;
-    const crawl = 0.12; // how fast it creeps on while waiting, compared with full speed
-    return 1 + Math.min(t - 1, hang) * crawl + Math.max(0, t - 1 - hang);
+    return 1 + Math.max(0, t - 1 - hang);
   }
 
   /**
