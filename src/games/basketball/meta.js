@@ -7,7 +7,7 @@
 export default {
   id: 'basketball',
   name: 'Hoops',
-  description: 'Line up the rim and flick your phone to shoot. Swishes score extra.',
+  description: "Shoot like it's the ball: set, push, and snap your wrist. Swishes score extra.",
   // Tile picture: a backboard, rim, and net, with a ball on its way in.
   art: `
     <svg viewBox="0 0 160 90" aria-hidden="true">

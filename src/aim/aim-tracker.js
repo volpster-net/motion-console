@@ -42,6 +42,8 @@ const MAX_FRAME_MS = 100;
  * smoothing the crosshair uses, keeps gravity and filters out the jolts.
  */
 const GRAVITY_SMOOTHING_MS = 150;
+/** Earth's gravity, in m/s². A phone at rest feels exactly this much, pointing up. */
+const GRAVITY = 9.81;
 /** How often the per-player sample rate shown in the debug panel is recalculated. */
 const RATE_WINDOW_MS = 1000;
 
@@ -139,7 +141,10 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
     const start = aimRates(aimer, previous);
     const end = aimRates(aimer, sample);
     aimer.rates = end;
-    for (const fn of motionListeners) fn(id, end, sample.t);
+    if (motionListeners.size > 0) {
+      const body = bodyOf(aimer, sample);
+      for (const fn of motionListeners) fn(id, end, sample.t, body);
+    }
     const average = { yaw: (start.yaw + end.yaw) / 2, pitch: (start.pitch + end.pitch) / 2 };
     const rates = applyDeadzone(average, settings.deadzone);
     const moved = integrate(aimer.target, rates, dtMs, settings.sensitivity);
@@ -147,20 +152,47 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
   }
 
   let lastFrameAt = null;
-  /** @type {Set<(id: string, rates: import('./aim-math.js').AimRates, t: number) => void>} */
+  /**
+   * @typedef {{ tilt: number, lift: number }} Body
+   *   tilt: how far the phone's top edge points above level, in degrees
+   *         (0 = flat, 90 = pointing straight up, negative = pointing down).
+   *   lift: how hard the phone is being pushed upwards right now, in m/s²
+   *         (0 = held still; positive = speeding up upwards).
+   */
+  /** @type {Set<(id: string, rates: import('./aim-math.js').AimRates, t: number, body: Body) => void>} */
   const motionListeners = new Set();
+
+  /**
+   * Works out the phone's tilt and upward push from its accelerometer.
+   *
+   * The accelerometer feels gravity plus any push. We already track which way
+   * is "up" (gravity, smoothed so quick movements don't disturb it). So:
+   * - tilt: the top edge is the phone's y axis; how much of "up" lies along
+   *   it tells us how steeply the top edge points upwards.
+   * - lift: the part of this reading that points up, minus gravity's share,
+   *   is the extra push. It's 0 when the phone is still.
+   *
+   * @returns {Body}
+   */
+  function bodyOf(aimer, sample) {
+    const tilt = (Math.asin(Math.max(-1, Math.min(1, aimer.up.y))) * 180) / Math.PI;
+    if (sample.gx === undefined) return { tilt, lift: 0 };
+    const along = sample.gx * aimer.up.x + sample.gy * aimer.up.y + sample.gz * aimer.up.z;
+    return { tilt, lift: along - GRAVITY };
+  }
 
   return {
     settings,
 
     /**
-     * Calls `fn` with every motion sample's turning speeds as the tracker
-     * processes them (during update(), in the order the phone measured them).
-     * Games use this to spot gestures, like a basketball flick or a bat swing.
+     * Calls `fn` with every motion sample as the tracker processes it (during
+     * update(), in the order the phone measured them). Games use this to spot
+     * gestures, like a basketball shot or a bat swing.
      *
-     * @param {(id: string, rates: import('./aim-math.js').AimRates, t: number) => void} fn
+     * @param {(id: string, rates: import('./aim-math.js').AimRates, t: number, body: Body) => void} fn
      *   `rates.yaw` is left/right turning and `rates.pitch` is up/down tipping,
-     *   in degrees per second, however the phone is held. `t` is the phone's timestamp.
+     *   in degrees per second, however the phone is held. `t` is the phone's
+     *   timestamp. `body` is the phone's tilt and upward push (see Body above).
      * @returns {() => void} stop listening
      */
     onMotion(fn) {

@@ -1,11 +1,13 @@
 /**
  * Hoops: an arcade basketball shootout. Aim left and right with your phone,
- * then flick it upwards to shoot. Make as many baskets as you can in 60 seconds.
+ * then shoot with a real shooting motion: set, push, snap. Make as many
+ * baskets as you can in 60 seconds.
  *
  * Files in this folder:
  *   index.js   this file: settings, screens, shooting, and the game loop
  *   court.js   the court and the ball's flight: physics, bounces, scoring (tested)
- *   flick.js   spotting a shooting flick in the phone's motion (tested)
+ *   shot.js    spotting the shooting motion in the phone's movement (tested)
+ *   tuning.js  the shot-tuning graph (press D)
  *   render.js  drawing the court, hoop, and balls on a canvas
  *   sounds.js  sound effects, made with the shared synthesizer
  */
@@ -24,7 +26,8 @@ import {
   shotResult,
   stepBall,
 } from './court.js';
-import { createFlickDetector, normalizeFlick } from './flick.js';
+import { createShotDetector, normalizePush } from './shot.js';
+import { createShotTuning } from './tuning.js';
 import meta from './meta.js';
 import { createRenderer } from './render.js';
 import { createSounds } from './sounds.js';
@@ -55,22 +58,28 @@ export const CONFIG = {
   },
 
   /**
-   * The shooting flick. Speeds are how fast the phone tips up, in degrees
-   * per second. These are starting guesses: the power meter shows your real
-   * flick speeds, so adjust `weakest` and `strongest` to suit.
+   * The shooting motion: set, push, snap (shot.js explains each step).
+   * These are starting guesses. Press D in the game to see your real
+   * numbers on a graph, then move these to suit.
    */
-  flick: {
-    /** Tipping up faster than this starts a flick… */
-    startRate: 150,
-    /** …and slowing below this ends it. */
-    endRate: 60,
-    /** A flick can't last longer than this. */
-    maxMs: 350,
-    /** Ignore motion this long after a flick (bringing the phone back down). */
-    cooldownMs: 400,
-    /** Flick speeds that count as the weakest (0) and strongest (1) shots. */
-    weakest: 250,
-    strongest: 900,
+  shot: {
+    /** SET: the top edge must point at least this many degrees above level… */
+    setTilt: 35,
+    /** …for this long. */
+    setHoldMs: 120,
+    /** Lowering the phone below this lets go of the set. */
+    unsetTilt: 20,
+    /** PUSH: an upward push harder than this (m/s²) starts the shot. */
+    pushStart: 3,
+    /** SNAP: the wrist flicking forwards faster than this (°/s) releases it… */
+    snapRate: 250,
+    /** …and it must come within this long of the push starting. */
+    windowMs: 600,
+    /** Ignore movement this long after a shot (bringing the phone back down). */
+    cooldownMs: 500,
+    /** Pushes (m/s²) that count as the weakest (0) and strongest (1) shots. */
+    weakest: 4,
+    strongest: 24,
     /** The perfect-power spot on that 0-to-1 scale… */
     sweetSpot: 0.5,
     /** …and how far either side of it still flies perfectly. */
@@ -79,8 +88,13 @@ export const CONFIG = {
     powerGain: 0.35,
   },
 
-  /** Holding Fire charges a meter that swings up and down; let go to shoot. */
+  /**
+   * Holding Fire charges a meter that swings up and down; let go to shoot.
+   * 'auto' allows it only for phones that send no motion data (no gyroscope),
+   * so everyone else has to make the shooting motion. 'always' or 'never' to override.
+   */
   charge: {
+    mode: 'auto',
     /** Time for the meter to go from empty to full and back. */
     cycleMs: 1600,
   },
@@ -95,7 +109,7 @@ export const CONFIG = {
     /** From your hands to the middle of the rim. */
     distance: 4,
     releaseHeight: 1.5,
-    /** Every shot leaves at this upward angle; flick strength sets the speed. */
+    /** Every shot leaves at this upward angle; the arm push sets the speed. */
     launchAngleDeg: 60,
     board: {
       /** Space between the back of the rim and the board. */
@@ -126,6 +140,8 @@ export const CONFIG = {
   },
 
   vibration: {
+    /** A tiny tick when you're set, so you can feel it without looking. */
+    set: 12,
     shot: 15,
     make: [40, 30, 60],
     swish: [60, 30, 60, 30, 100],
@@ -236,7 +252,7 @@ function createSession(container, controller) {
   const cleanups = [];
 
   // The sweet spot on the power meter.
-  const { sweetSpot, sweetBand } = CONFIG.flick;
+  const { sweetSpot, sweetBand } = CONFIG.shot;
   meter.sweet.style.left = `${(sweetSpot - sweetBand) * 100}%`;
   meter.sweet.style.width = `${sweetBand * 2 * 100}%`;
 
@@ -301,7 +317,9 @@ function createSession(container, controller) {
       <h1>${name}</h1>
       <p>${description}</p>
       <p class="bb-rules">
-        Turn your phone to line up with the rim, then <b>flick it upwards</b> to shoot.
+        Point your phone to line up with the rim. Then shoot like it's the ball:
+        <b>raise it and cock your wrist back</b>, <b>push your arm up</b>, and
+        <b>snap your wrist forwards</b> to release. Push harder to shoot further.
         A basket is <b>${CONFIG.scoring.basket}</b>, a swish (nothing but net) is <b>${CONFIG.scoring.swish}</b>.
         Make <b>${CONFIG.scoring.onFireFrom}</b> in a row and you're on fire: <b>×${CONFIG.scoring.onFireMultiplier}</b>.
       </p>
@@ -310,7 +328,7 @@ function createSession(container, controller) {
           ? `<span class="bb-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Pull the trigger to start`
           : 'Scan the QR code with your phone to join'
       }</p>
-      <p class="bb-hint">No flick? Hold Fire to charge the power meter, and let go to shoot.</p>`;
+      <p class="bb-hint">Press D on this screen to see your shooting motion on a graph.</p>`;
   }
 
   function startCountdown(now) {
@@ -371,14 +389,17 @@ function createSession(container, controller) {
     return (aim.x * size.height) / rim.scale;
   }
 
-  /** Where each player was aiming when their flick began (the flick itself jiggles the aim). */
-  const aimAtFlickStart = new Map();
+  /**
+   * Where the player was aiming when they got set. Raising and cocking the
+   * phone jiggles the aim, so the shot uses the aim from just before.
+   */
+  let lockedAimX = null;
 
   /**
    * Launches a ball.
    *
    * @param {import('../../console/players.js').Player} player
-   * @param {number} norm  flick strength, 0 (weakest) to 1 (strongest)
+   * @param {number} norm  shot strength, 0 (weakest) to 1 (strongest)
    * @param {number} targetX
    * @param {number} now
    * @param {string} note  shown under the power meter
@@ -414,7 +435,8 @@ function createSession(container, controller) {
   function settle(ball, now) {
     const result = shotResult(ball);
     const player = activePlayer();
-    const at = { x: hoopX, y: CONFIG.court.rimHeight + 0.45, z: CONFIG.court.distance };
+    // Results float up from just below the net, clear of the top bar.
+    const at = { x: hoopX, y: CONFIG.court.rimHeight - 0.8, z: CONFIG.court.distance };
     if (ball.scored) {
       stats.makes += 1;
       stats.streak += 1;
@@ -446,23 +468,52 @@ function createSession(container, controller) {
   let paused = false;
   let pausedAt = 0;
 
-  // Flick detection runs on every motion sample the tracker processes.
-  const detectors = new Map();
+  // Shot detection runs on every motion sample the tracker processes.
+  const detector = createShotDetector(CONFIG.shot);
+  const tuning = createShotTuning({ root, config: CONFIG.shot });
+  cleanups.push(() => tuning.destroy());
+  /** Short hints shown when a shot fizzles. */
+  const FIZZLE_TEXT = { push: 'Push with your arm!', snap: 'Snap your wrist to release!' };
+
   cleanups.push(
-    tracker.onMotion((playerId, rates, t) => {
+    tracker.onMotion((playerId, rates, t, body) => {
       const player = activePlayer();
       if (!player || player.id !== playerId) return;
-      let detector = detectors.get(playerId);
-      if (!detector) detectors.set(playerId, (detector = createFlickDetector(CONFIG.flick)));
-      const event = detector.update(rates.pitch, t);
-      if (event?.type === 'start') aimAtFlickStart.set(playerId, aimX(playerId));
-      if (event?.type === 'flick' && phase.name === 'playing') {
-        const targetX = aimAtFlickStart.get(playerId) ?? aimX(playerId);
-        const norm = normalizeFlick(event.peak, CONFIG.flick);
-        shoot(player, norm, targetX, performance.now(), `Flick ${Math.round(event.peak)}°/s`);
+      tuning.record({ t, tilt: body.tilt, lift: body.lift, snap: -rates.pitch });
+      const event = detector.update({
+        tilt: body.tilt,
+        lift: body.lift,
+        pitchRate: rates.pitch,
+        t,
+      });
+      if (!event) return;
+      tuning.mark(event);
+      const now = performance.now();
+
+      if (event.type === 'set') {
+        lockedAimX = aimX(playerId);
+        controller.vibrate(player.id, CONFIG.vibration.set);
+      } else if (event.type === 'unset') {
+        lockedAimX = null;
+      } else if (event.type === 'fizzle') {
+        lockedAimX = null;
+        if (phase.name === 'playing') renderer.hint(FIZZLE_TEXT[event.missing], now);
+      } else if (event.type === 'shot') {
+        const norm = normalizePush(event.push, CONFIG.shot);
+        tuning.describeShot(event, norm);
+        const targetX = lockedAimX ?? aimX(playerId);
+        lockedAimX = null;
+        shoot(player, norm, targetX, now, `Push ${event.push.toFixed(1)} m/s²`);
       }
     }),
   );
+
+  /** May this player use the hold-Fire charged shot? */
+  function mayCharge(player) {
+    if (CONFIG.charge.mode === 'always') return true;
+    if (CONFIG.charge.mode === 'never') return false;
+    return tracker.get(player.id).lastSample === null; // no motion data: no gyroscope
+  }
 
   cleanups.push(
     controller.onInput(INPUT.MOTION, (sample, { player }) => {
@@ -485,7 +536,7 @@ function createSession(container, controller) {
     if (phase.name === 'results' && down && now - phase.at >= CONFIG.round.resultsLockMs) {
       return startCountdown(now);
     }
-    if (phase.name !== 'playing') return;
+    if (phase.name !== 'playing' || !mayCharge(player)) return;
     if (down) {
       chargingSince = now;
     } else if (chargingSince !== null) {
@@ -503,7 +554,7 @@ function createSession(container, controller) {
 
   // ---- The game loop ------------------------------------------------------
   // About 60 times a second:
-  //   1. the aim tracker catches up on phone movement (and spots flicks);
+  //   1. the aim tracker catches up on phone movement (and spots shots);
   //   2. the game moves forward to the current time: the countdown, the
   //      hoop sliding, every ball in the air, and the round ending;
   //   3. everything is redrawn.
@@ -562,6 +613,17 @@ function createSession(container, controller) {
     if (timeUp(now) && allDecided) showResults(now);
   }
 
+  /** The crosshair's position, in screen heights: locked in place once the player is set. */
+  function aimScreenX(liveX) {
+    if (lockedAimX === null) return liveX;
+    const rim = project(
+      { x: 0, y: CONFIG.court.rimHeight, z: CONFIG.court.distance },
+      size,
+      CONFIG,
+    );
+    return (lockedAimX * rim.scale) / size.height;
+  }
+
   const shownHud = { score: '', streak: '', fire: '', time: '' };
   function draw(now) {
     const player = activePlayer();
@@ -570,9 +632,14 @@ function createSession(container, controller) {
       now,
       hoopX,
       balls,
-      aim: aim && phase.name === 'playing' ? { x: aim.x, color: playerColor(player.slot) } : null,
+      aim:
+        aim && phase.name === 'playing'
+          ? { x: aimScreenX(aim.x), color: playerColor(player.slot), locked: lockedAimX !== null }
+          : null,
+      hands: phase.name === 'playing' ? detector.stage : null,
       onFire: phase.name === 'playing' && onFire(),
     });
+    tuning.draw();
 
     if (chargingSince !== null && phase.name === 'playing') showPower(chargeAt(now), 'Charging…');
 
@@ -622,7 +689,8 @@ function createSession(container, controller) {
       lastShotAt += pausedFor;
       if (chargingSince !== null) chargingSince += pausedFor;
       renderer.shift(pausedFor);
-      for (const detector of detectors.values()) detector.reset();
+      detector.reset();
+      lockedAimX = null;
       lastFrameAt = null;
       paused = false;
     },

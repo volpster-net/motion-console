@@ -73,10 +73,10 @@ export function hoopXAt(progress, elapsedMs, config) {
 }
 
 /**
- * Turns a flick's strength into a shot's power.
+ * Turns a shot's strength into its power.
  *
- * `norm` places the flick between the weakest (0) and strongest (1) flicks
- * we expect. Inside the sweet spot around the middle the shot flies exactly
+ * `norm` places the arm push between the weakest (0) and strongest (1)
+ * pushes we expect. Inside the sweet spot around the middle the shot flies exactly
  * as far as it should; outside it, the ball flies proportionally short or
  * long. `speedError` is that mistake: −0.1 means 10% too slow.
  *
@@ -84,7 +84,7 @@ export function hoopXAt(progress, elapsedMs, config) {
  * @param {Config} config
  */
 export function powerFromNorm(norm, config) {
-  const { sweetSpot, sweetBand, powerGain } = config.flick;
+  const { sweetSpot, sweetBand, powerGain } = config.shot;
   const clamped = Math.min(1, Math.max(0, norm));
   const offBy = clamped - sweetSpot;
   const outside = Math.max(0, Math.abs(offBy) - sweetBand);

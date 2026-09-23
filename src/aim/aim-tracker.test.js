@@ -164,4 +164,21 @@ describe('createAimTracker', () => {
     tracker.update(16, ASPECT);
     expect(seen).toHaveLength(2);
   });
+
+  it('reports how the phone is tilted and pushed', () => {
+    const tracker = exact();
+    const bodies = [];
+    tracker.onMotion((id, rates, t, body) => bodies.push(body));
+    // Top edge pointing 30° up (gravity split between y and z), held still…
+    const still = { gx: 0, gy: 9.81 * Math.sin(Math.PI / 6), gz: 9.81 * Math.cos(Math.PI / 6) };
+    tracker.push('p1', { alpha: 0, beta: 0, gamma: 0, ...still, t: 0 });
+    tracker.push('p1', { alpha: 0, beta: 0, gamma: 0, ...still, t: 10 });
+    // …then pushed upwards: the reading grows by 5 m/s² along "up".
+    const pushed = { gx: 0, gy: still.gy * (14.81 / 9.81), gz: still.gz * (14.81 / 9.81) };
+    tracker.push('p1', { alpha: 0, beta: 0, gamma: 0, ...pushed, t: 20 });
+    tracker.update(0, ASPECT);
+    expect(bodies[0].tilt).toBeCloseTo(30);
+    expect(bodies[0].lift).toBeCloseTo(0);
+    expect(bodies[1].lift).toBeCloseTo(5);
+  });
 });

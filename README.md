@@ -13,8 +13,8 @@ gyroscope becomes a pointer, with buttons.
 
 **Status: Milestone 5.** After pairing, the console shows a **launcher menu**: point at a game and
 pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Two games so
-far: **Target Practice** (hit rings before they vanish) and **Hoops** (flick your phone to shoot
-baskets). New games plug into the menu by adding a folder.
+far: **Target Practice** (hit rings before they vanish) and **Hoops** (shoot baskets
+with a real shooting motion: set, push, snap). New games plug into the menu by adding a folder.
 
 ## How it works
 
@@ -265,33 +265,44 @@ An arcade basketball shootout, and the first game that reads a **gesture** rathe
 pointing. Same flow as Target Practice: title → 3-2-1 → 60 seconds → results.
 
 - **Aim** by turning the phone left or right; the crosshair sits at rim height so you can line it
-  up with the hoop. **Shoot** by flicking the phone upwards. The flick's speed sets the shot's
-  power: every shot leaves at the same arc, so too soft falls short and too hard flies long.
-- A **power meter** shows where each flick landed against the sweet spot, with its speed in °/s,
-  so players can learn the right flick. No gyroscope? Hold **Fire** to charge the meter and let go
-  to shoot.
+  up with the hoop.
+- **Shoot like it's the ball**, in three parts:
+  1. **Set**: raise the phone and cock your wrist back so the top edge points up, and hold it a
+     moment. The ball on screen lifts and glows, the phone ticks, and your aim locks.
+  2. **Push**: extend your arm upwards. The accelerometer measures the push, and **how hard you
+     push sets the power**: every shot leaves at the same arc, so too soft falls short and too hard
+     flies long.
+  3. **Snap**: flick your wrist forwards. That releases the ball.
+
+  A tap, a wave, or a lazy wrist flick doesn't shoot. If a shot fizzles, a hint says what was
+  missing ("Push with your arm!" or "Snap your wrist to release!").
+
+- A **power meter** shows each shot's push against the sweet spot. Holding **Fire** to charge a
+  shot only works for phones that send no motion data (no gyroscope).
 - The ball flies in 3D with gravity and bounces off the rim, backboard, and floor, so shots can
   swish, bank in, rattle in, or rim out. Shots still in the air at the buzzer count.
 - A basket is 2, a swish 3. Three makes in a row puts you **on fire**: ×2 until you miss. The
   hoop starts sliding side to side halfway through the round.
 
-How a flick is spotted ([`flick.js`](src/games/basketball/flick.js)): the aim tracker reports every
-motion sample's up/down turning speed, however the phone is held. A flick starts when that speed
-passes a threshold, ends when it drops back, and its peak is its strength. A short cooldown
-ignores the wobble of lowering the phone afterwards.
+How the shot is spotted ([`shot.js`](src/games/basketball/shot.js)): the aim tracker reports, for
+every motion sample, the phone's **tilt** (how far the top edge points up, from gravity), its
+**lift** (upward push, from the accelerometer minus gravity), and its **pitch rate** (how fast it
+tips, from the gyroscope). A small state machine walks through ready → set → pushing → shot, and
+anything out of order fizzles.
 
-**Tuning the feel.** `CONFIG` at the top of
-[`src/games/basketball/index.js`](src/games/basketball/index.js) holds the court (real metres),
-scoring, bounciness, and the flick. The flick speeds are starting guesses: the power meter shows
-real flick speeds, so adjust `flick.weakest` and `flick.strongest` to match how people actually
-flick. The physics in `court.js` is unit-tested: a perfect shot swishes, a soft one falls short,
-and so on.
+**Tuning the feel.** Press <kbd>D</kbd> in Hoops for a live graph of tilt, push, and snap, with the
+detection thresholds drawn as dashed lines and markers for each set, push, shot, and fizzle. Make
+a few real shots, see where your lines peak, and adjust `CONFIG.shot` in
+[`src/games/basketball/index.js`](src/games/basketball/index.js) (the thresholds, and `weakest` /
+`strongest` for power). `CONFIG` also holds the court (real metres), scoring, and bounciness. The
+physics in `court.js` and the detector in `shot.js` are unit-tested.
 
 ### Shared by games
 
 `src/games/shared/` holds what games have in common: `synth.js` (Web Audio sound effects from
 tones and noise, no files) and `personal-best.js` (a best score per game in the browser). The aim
-tracker's `onMotion()` lets any game watch each motion sample, for gestures like a flick or a swing.
+tracker's `onMotion()` lets any game watch each motion sample (turn and tip speeds, tilt, and
+upward push), for gestures like a basketball shot or a bat swing.
 
 ## Project structure
 
@@ -336,7 +347,8 @@ src/
       meta.js               name, description, and tile art for the menu
       index.js              CONFIG, screens, shooting, and the game loop
       court.js              3D ball flight, bounces, scoring, perspective (pure, tested)
-      flick.js              spotting the shooting flick (pure, tested)
+      shot.js               spotting set → push → snap (pure, tested)
+      tuning.js             the shot-tuning graph (press D)
       render.js             canvas drawing: court, hoop, net, balls
       sounds.js             sound effects
   channels/
@@ -427,8 +439,8 @@ Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, defau
   crosshair and the phone can disagree about where "centre" is. The deadzone slows this down, and
   Re-center fixes it.
 - **Console reload reassigns slots.** Controllers reconnect automatically but may swap slot numbers.
-- **Flick strength varies by person.** Hoops' flick range is a starting guess; the power meter
-  shows real flick speeds to tune it from. Per-player calibration would be a nice next step.
+- **Shooting motions vary by person.** Hoops' shot thresholds are starting guesses; the D graph
+  shows real motions to tune them from. Per-player calibration would be a nice next step.
 - Next milestones: a baseball home-run derby (swing timing, which needs network-delay
   compensation), multiplayer, and controller-side game UIs
   (`sys/channel` already tells phones which channel is active).

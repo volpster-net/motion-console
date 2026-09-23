@@ -41,6 +41,8 @@ export function createRenderer(canvas, config) {
   let size = { width: 0, height: 0 };
   /** @type {Array<{ at: number, text: string, kind: 'make' | 'fire' | 'miss', p: import('./court.js').Vec }>} */
   let texts = [];
+  /** A coaching hint near the bottom of the screen, e.g. "Snap your wrist to release!" */
+  let hint = null;
 
   const to = (p) => project(p, size, config);
 
@@ -223,9 +225,14 @@ export function createRenderer(canvas, config) {
     ctx.restore();
   }
 
-  function drawBall(ball, onFire) {
-    const p = to(ball.p);
-    const r = court.ballRadius * p.scale;
+  /**
+   * @param {{ p: import('./court.js').Vec, spin: number }} ball
+   * @param {boolean} onFire
+   * @param {{ x: number, y: number, r: number }} [placed]  draw here instead (screen pixels)
+   */
+  function drawBall(ball, onFire, placed) {
+    const p = placed ?? to(ball.p);
+    const r = placed?.r ?? court.ballRadius * to(ball.p).scale;
     ctx.save();
     if (onFire) {
       ctx.shadowColor = COLORS.fire;
@@ -258,12 +265,23 @@ export function createRenderer(canvas, config) {
     ctx.restore();
   }
 
-  /** The aim marker, drawn at the rim's height so you can line it up with the hoop. */
+  /**
+   * The aim marker, drawn at the rim's height so you can line it up with the
+   * hoop. Once you're set, it locks in place and gets a solid centre.
+   */
   function drawAim(aim) {
     const rimY = to({ x: 0, y: court.rimHeight, z: court.distance }).y;
     const x = size.width / 2 + aim.x * size.height;
     ctx.save();
     ctx.translate(x, rimY);
+    if (aim.locked) {
+      ctx.fillStyle = aim.color;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     ctx.lineCap = 'round';
     for (const [width, color] of [
       [7, '#ffffff'],
@@ -284,6 +302,60 @@ export function createRenderer(canvas, config) {
       }
       ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  /**
+   * The ball in your hands, at the bottom of the screen. It rests low when
+   * you're ready, lifts and glows when you're set, and is gone for a moment
+   * after a shot (it's in the air).
+   *
+   * @param {import('./shot.js').ShotStage} stage
+   * @param {number} now
+   */
+  function drawHands(stage, now) {
+    if (stage === 'cooldown') return;
+    const raised = stage === 'set' || stage === 'pushing';
+    const r = size.height * 0.1;
+    const x = size.width / 2;
+    const y = size.height - (raised ? r * 1.6 : r * 0.55);
+    ctx.save();
+    if (raised) {
+      // A pulsing glow: you're set, now push and snap.
+      ctx.shadowColor = '#23b566';
+      ctx.shadowBlur = r * (0.5 + 0.3 * Math.sin(now / 120));
+    }
+    drawBall({ p: { x: 0, y: 0, z: 0 }, spin: 0.4 }, false, { x, y, r });
+    ctx.restore();
+
+    ctx.save();
+    ctx.font = `800 ${Math.round(size.height * 0.03)}px Nunito, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 5;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = raised ? '#23b566' : '#6b7785';
+    const label = raised ? 'Set! Push up and snap' : 'Raise and cock your wrist to set';
+    const labelY = y - r - size.height * 0.02;
+    ctx.strokeText(label, x, labelY);
+    ctx.fillText(label, x, labelY);
+    ctx.restore();
+  }
+
+  function drawHint(now) {
+    if (!hint || now - hint.at > config.effects.textMs * 1.5) return;
+    const age = (now - hint.at) / (config.effects.textMs * 1.5);
+    ctx.save();
+    ctx.globalAlpha = 1 - age * age;
+    ctx.font = `800 ${Math.round(size.height * 0.045)}px Nunito, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 6;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = '#e5484d';
+    const y = size.height * 0.62;
+    ctx.strokeText(hint.text, size.width / 2, y);
+    ctx.fillText(hint.text, size.width / 2, y);
     ctx.restore();
   }
 
@@ -321,13 +393,20 @@ export function createRenderer(canvas, config) {
       texts.push({ p: position, text, at: now, kind });
     },
 
+    /** A coaching hint near the bottom of the screen. */
+    hint(text, now) {
+      hint = { text, at: now };
+    },
+
     /** Moves every effect later by `ms`, so they freeze during a pause. */
     shift(ms) {
       texts = texts.map((t) => ({ ...t, at: t.at + ms }));
+      if (hint) hint = { ...hint, at: hint.at + ms };
     },
 
     clearEffects() {
       texts = [];
+      hint = null;
     },
 
     /**
@@ -335,11 +414,12 @@ export function createRenderer(canvas, config) {
      *   now: number,
      *   hoopX: number,
      *   balls: import('./court.js').Ball[],
-     *   aim: { x: number, color: string } | null,
+     *   aim: { x: number, color: string, locked: boolean } | null,
+     *   hands: import('./shot.js').ShotStage | null,
      *   onFire: boolean,
      * }} scene
      */
-    draw({ now, hoopX, balls, aim, onFire }) {
+    draw({ now, hoopX, balls, aim, hands, onFire }) {
       if (size.height === 0) return;
       ctx.clearRect(0, 0, size.width, size.height);
       drawCourt(hoopX);
@@ -358,7 +438,9 @@ export function createRenderer(canvas, config) {
       for (const ball of inFront) drawBall(ball, onFire);
 
       if (aim) drawAim(aim);
+      if (hands) drawHands(hands, now);
       drawTexts(now);
+      drawHint(now);
     },
   };
 }

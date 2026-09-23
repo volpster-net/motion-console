@@ -64,7 +64,7 @@ describe('shots', () => {
 });
 
 describe('powerFromNorm', () => {
-  const { sweetSpot, sweetBand, powerGain } = CONFIG.flick;
+  const { sweetSpot, sweetBand, powerGain } = CONFIG.shot;
 
   it('flies perfectly anywhere in the sweet spot', () => {
     expect(powerFromNorm(sweetSpot, CONFIG).speedError).toBe(0);
@@ -78,7 +78,7 @@ describe('powerFromNorm', () => {
     );
   });
 
-  it('clamps flicks outside the expected range', () => {
+  it('clamps pushes outside the expected range', () => {
     expect(powerFromNorm(3, CONFIG)).toEqual(powerFromNorm(1, CONFIG));
   });
 });
