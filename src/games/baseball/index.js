@@ -323,12 +323,42 @@ function createSession(container, controller) {
   resizeObserver.observe(root);
   cleanups.push(() => resizeObserver.disconnect());
 
+  // ---- Music and the crowd --------------------------------------------------
+  // The organ on the title and results screens; "Charge!" through the 3-2-1
+  // countdown (it finishes as the first pitch is thrown); while you bat, no
+  // music, just the crowd murmuring, so you can hear the pitch and the bat.
+  let organAfterResults = null;
+  function playMusicFor({ name }) {
+    clearTimeout(organAfterResults);
+    if (name === 'title') {
+      sounds.stopCrowd();
+      sounds.music('organ');
+    } else if (name === 'countdown') {
+      sounds.music('charge');
+      sounds.crowd();
+    } else if (name === 'batting') {
+      sounds.crowd();
+    } else if (name === 'results') {
+      sounds.stopCrowd();
+      sounds.stopMusic();
+      // After the end-of-round jingle.
+      organAfterResults = setTimeout(() => {
+        if (phase.name === 'results' && !paused) sounds.music('organ');
+      }, 1800);
+    }
+  }
+  cleanups.push(() => clearTimeout(organAfterResults));
+
   // ---- Sound switch -------------------------------------------------------
   const unlockSound = () => sounds.unlock();
   const showSoundState = () => (soundButton.hidden = sounds.enabled);
   window.addEventListener('pointerdown', unlockSound);
   window.addEventListener('keydown', unlockSound);
   sounds.onChange(showSoundState);
+  // Once sound is switched on, start whatever should be playing now.
+  sounds.onChange(() => {
+    if (sounds.enabled && !paused) playMusicFor(phase);
+  });
   showSoundState();
   cleanups.push(() => {
     window.removeEventListener('pointerdown', unlockSound);
@@ -382,6 +412,7 @@ function createSession(container, controller) {
   function showTitle() {
     phase = { name: 'title' };
     root.dataset.phase = 'title';
+    playMusicFor(phase);
     const player = activePlayer();
     screen.innerHTML = `
       <h1>${name}</h1>
@@ -403,6 +434,7 @@ function createSession(container, controller) {
   function startCountdown(now) {
     phase = { name: 'countdown', startedAt: now, shown: -1 };
     root.dataset.phase = 'countdown';
+    playMusicFor(phase);
     stats = freshStats();
     renderer.clearEffects();
   }
@@ -433,7 +465,8 @@ function createSession(container, controller) {
     phase = { name: 'batting', pitch: newPitch(0, now) };
     root.dataset.phase = 'batting';
     screen.innerHTML = '';
-    sounds.go();
+    // "Charge!" played through the countdown; without it, a beep says go.
+    if (!sounds.musicPlaying) sounds.go();
   }
 
   function showResults(now) {
@@ -444,6 +477,7 @@ function createSession(container, controller) {
     if (newLongestBest) bestLongest.save((recordLongest = longestFt));
     phase = { name: 'results', at: now };
     root.dataset.phase = 'results';
+    playMusicFor(phase);
     sounds.roundEnd();
     if (newHomerBest || newLongestBest) sounds.newBest();
     screen.innerHTML = `
@@ -575,7 +609,7 @@ function createSession(container, controller) {
       if (count !== phase.shown) {
         phase.shown = count;
         screen.innerHTML = `<p class="hr-count">${count}</p>`;
-        sounds.tick();
+        if (!sounds.musicPlaying) sounds.tick();
       }
       return;
     }
@@ -749,6 +783,8 @@ function createSession(container, controller) {
       if (paused) return;
       paused = true;
       pausedAt = performance.now();
+      sounds.stopMusic();
+      sounds.stopCrowd();
     },
 
     /**
@@ -771,6 +807,9 @@ function createSession(container, controller) {
       detector.reset();
       lastFrameAt = null;
       paused = false;
+      // The crowd picks up again; the organ starts over on the title and results screens.
+      if (phase.name === 'countdown') sounds.crowd();
+      else playMusicFor(phase);
     },
 
     destroy() {

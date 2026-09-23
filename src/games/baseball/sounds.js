@@ -1,10 +1,17 @@
 /**
  * Home Run Derby's sound effects, made with the shared synthesizer
  * (src/games/shared/synth.js explains how tones and noise bursts work),
- * plus one recording: the crack of the bat (audio/bat-crack.mp3).
+ * plus recordings: the crack of the bat (audio/bat-crack.mp3), and the music,
+ * ballpark organ (audio/organ.mp3) and the "Charge!" call (audio/charge.mp3).
+ *
+ * When there's music: the organ on the title and results screens, "Charge!"
+ * as a round starts, and no music while you bat (just the crowd), so you can
+ * hear the pitch and the crack of the bat.
  */
 import { createSynth, NOTE } from '../shared/synth.js';
 import batCrackUrl from './audio/bat-crack.mp3';
+import chargeUrl from './audio/charge.mp3';
+import organUrl from './audio/organ.mp3';
 
 /**
  * @param {{ volume: number }} options  0 to 1
@@ -15,6 +22,19 @@ export function createSounds({ volume }) {
   /** The recorded crack of the bat, once it has loaded. */
   let batCrack = null;
   synth.load(batCrackUrl).then((sound) => (batCrack = sound));
+  /** The music, once loaded. */
+  const tracks = { organ: null, charge: null };
+  synth.load(organUrl).then((sound) => (tracks.organ = sound));
+  synth.load(chargeUrl).then((sound) => (tracks.charge = sound));
+  /** How loud each track plays (the "Charge!" recording is much louder than the organ). */
+  const TRACK_GAIN = { organ: 0.7, charge: 0.45 };
+  /** The music playing now, and which track it is. */
+  let music = null;
+  let musicName = '';
+
+  /** The crowd's murmur while you bat, and the timer for their chatter. */
+  let murmur = [];
+  let chatter = null;
 
   return {
     get enabled() {
@@ -22,7 +42,91 @@ export function createSounds({ volume }) {
     },
     unlock: synth.unlock,
     onChange: synth.onChange,
-    close: synth.close,
+    close() {
+      clearInterval(chatter);
+      synth.close();
+    },
+
+    /**
+     * Plays a music track once (stopping any other). Asking for the track
+     * that's already playing leaves it playing. If the track hasn't loaded
+     * yet, it waits for it (briefly).
+     *
+     * @param {'organ' | 'charge'} name
+     */
+    music(name) {
+      if (music?.playing && musicName === name) return;
+      music?.stop(0.4);
+      musicName = name;
+      const start = () => {
+        if (musicName !== name) return; // something else was asked for meanwhile
+        music = synth.play(tracks[name], { gain: TRACK_GAIN[name] });
+      };
+      if (tracks[name]) start();
+      else
+        synth.load(name === 'organ' ? organUrl : chargeUrl).then((sound) => {
+          tracks[name] = sound;
+          start();
+        });
+    },
+
+    /** True while a music track is playing. */
+    get musicPlaying() {
+      return Boolean(music?.playing);
+    },
+
+    /** Fades out any music. */
+    stopMusic() {
+      music?.stop(0.6);
+      music = null;
+      musicName = '';
+    },
+
+    /**
+     * The crowd while you bat: a low murmur that swells and ebbs, with
+     * snatches of chatter (a voice rising here and there) on top.
+     */
+    crowd() {
+      if (murmur.length || !synth.enabled) return;
+      murmur = [
+        synth.bed({
+          cutoff: 450,
+          resonance: 0.7,
+          gain: 0.28,
+          swells: [
+            { rate: 0.23, depth: 0.35 },
+            { rate: 0.11, depth: 0.25 },
+          ],
+          fadeIn: 1.5,
+        }),
+        synth.bed({
+          cutoff: 1300,
+          resonance: 1.2,
+          gain: 0.11,
+          swells: [{ rate: 0.37, depth: 0.4 }],
+          fadeIn: 1.5,
+        }),
+      ].filter(Boolean);
+      // Chatter: now and then, a voice-like burst somewhere in the crowd.
+      chatter = setInterval(() => {
+        if (Math.random() > 0.35) return;
+        noise({
+          duration: 0.08 + Math.random() * 0.25,
+          gain: 0.06 + Math.random() * 0.12,
+          cutoff: 600 + Math.random() * 1200,
+          filter: 'bandpass',
+          resonance: 4 + Math.random() * 4,
+        });
+      }, 180);
+    },
+
+    /** The crowd quietens down. */
+    stopCrowd() {
+      for (const bed of murmur) bed?.stop(1);
+      murmur = [];
+      clearInterval(chatter);
+      chatter = null;
+    },
 
     /** The pitch leaving the pitcher's hand: a quick whoosh. */
     pitch() {

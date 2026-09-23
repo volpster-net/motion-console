@@ -48,6 +48,36 @@ export function createSynth({ volume }) {
 
   const ready = () => context.state === 'running';
 
+  /**
+   * A handle on a playing sound (its sources, and the gain its loudness goes
+   * through), to fade it out and stop it.
+   *
+   * @returns {Playing}
+   */
+  function playing(sources, level, endsAt) {
+    let stopped = false;
+    return {
+      get playing() {
+        return !stopped && context.currentTime < endsAt;
+      },
+      stop(fade = 0.3) {
+        if (stopped) return;
+        stopped = true;
+        const now = context.currentTime;
+        level.gain.cancelScheduledValues(now);
+        level.gain.setValueAtTime(Math.max(0.0001, level.gain.value), now);
+        level.gain.exponentialRampToValueAtTime(0.0001, now + fade);
+        for (const source of sources) {
+          try {
+            source.stop(now + fade + 0.02);
+          } catch {
+            // Already stopped.
+          }
+        }
+      },
+    };
+  }
+
   return {
     /** True once the browser allows sound. */
     get enabled() {
@@ -154,9 +184,10 @@ export function createSynth({ volume }) {
      *   rate?: number,   playback speed: below 1 is slower and lower, above 1 quicker and higher
      *   delay?: number,  seconds from now
      * }} [options]
+     * @returns {Playing | null}  null if nothing played
      */
     play(sound, { gain = 1, rate = 1, delay = 0 } = {}) {
-      if (!ready() || !sound) return;
+      if (!ready() || !sound) return null;
       const start = context.currentTime + delay;
       const source = context.createBufferSource();
       source.buffer = sound;
@@ -165,6 +196,54 @@ export function createSynth({ volume }) {
       level.gain.value = gain;
       source.connect(level).connect(master);
       source.start(start);
+      return playing([source], level, start + sound.duration / rate);
+    },
+
+    /**
+     * A continuous bed of filtered static, like the murmur of a crowd or wind,
+     * fading in. Its loudness can swell and ebb: each `swell` is a slow wave
+     * (`rate` times a second) that raises and lowers it by up to `depth`
+     * (0 to 1). Plays until stopped.
+     *
+     * @param {{
+     *   cutoff: number,
+     *   filter?: BiquadFilterType,
+     *   resonance?: number,
+     *   gain?: number,
+     *   swells?: Array<{ rate: number, depth: number }>,
+     *   fadeIn?: number,  seconds
+     * }} options
+     * @returns {Playing | null}
+     */
+    bed({ cutoff, filter = 'bandpass', resonance = 1, gain = 0.2, swells = [], fadeIn = 1 }) {
+      if (!ready()) return null;
+      const now = context.currentTime;
+      const source = context.createBufferSource();
+      source.buffer = noiseBuffer;
+      source.loop = true;
+      const shaper = context.createBiquadFilter();
+      shaper.type = filter;
+      shaper.frequency.value = cutoff;
+      shaper.Q.value = resonance;
+      // The swells wobble a gain in the middle; the outer gain fades in and out.
+      const wobble = context.createGain();
+      const depthTotal = swells.reduce((sum, swell) => sum + swell.depth, 0);
+      wobble.gain.value = 1 - depthTotal / 2;
+      const waves = swells.map(({ rate, depth }) => {
+        const wave = context.createOscillator();
+        wave.frequency.value = rate;
+        const amount = context.createGain();
+        amount.gain.value = depth / 2;
+        wave.connect(amount).connect(wobble.gain);
+        wave.start(now);
+        return wave;
+      });
+      const level = context.createGain();
+      level.gain.setValueAtTime(0.0001, now);
+      level.gain.exponentialRampToValueAtTime(gain, now + fadeIn);
+      source.connect(shaper).connect(wobble).connect(level).connect(master);
+      source.start(now, Math.random() * 0.9);
+      return playing([source, ...waves], level, Infinity);
     },
 
     /** Releases the audio hardware. Nothing plays after this. */
@@ -173,6 +252,11 @@ export function createSynth({ volume }) {
     },
   };
 }
+
+/**
+ * @typedef {{ stop: (fade?: number) => void, readonly playing: boolean }} Playing
+ *   a sound that's playing: `stop` fades it out over `fade` seconds
+ */
 
 /** Stand-in for browsers without Web Audio: every sound is silent. */
 function silentSynth() {
@@ -184,7 +268,8 @@ function silentSynth() {
     tone: nothing,
     noise: nothing,
     load: () => Promise.resolve(null),
-    play: nothing,
+    play: () => null,
+    bed: () => null,
     close: nothing,
   };
 }
