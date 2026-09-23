@@ -334,11 +334,14 @@ camera; the batter's joints are 3D points, projected like everything else in the
 
 How a swing is spotted and timed ([`swing.js`](src/games/baseball/swing.js)):
 
-- **Spotting it:** the gyroscope's _total_ spin speed (all three axes), so any grip works. A swing
-  is a spike past 500°/s, and the moment of fastest spin is when the bat meets the ball.
-- **Ignoring the load:** cocking the bat back before a swing is a quick spike too, just before the
-  real one. After each spike the detector waits a moment (`swing.settleMs`) and keeps the
-  **strongest**, so the load isn't mistaken for an early swing.
+- **Spotting it:** how fast the phone spins round the true **vertical** (using its gravity
+  reading to know which way is up, so any grip works), with a direction. A right-handed swing turns
+  you to the left; the **load** before it, and bringing the bat back after, turn the other way, so
+  they're simply ignored. A swing is a spike past 450°/s in the swing's direction, and its fastest
+  moment is when the bat meets the ball. Left-handed swingers are detected automatically.
+- **Showing it in time:** the batter starts his swing the moment yours _begins_, not once it's
+  over, and a pitch slows almost to a stop just past the plate while a swing's message could still
+  be on its way. So contact is visible, even with the network's delay.
 - **Timing it despite the network:** each phone sample carries the phone's own timestamp. The
   console keeps the smallest "arrived − measured" it has ever seen, which is the difference between
   the two clocks plus the quickest possible trip, and uses it to convert the swing's phone time to

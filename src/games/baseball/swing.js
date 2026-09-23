@@ -3,27 +3,28 @@
  *
  * The swing
  * ---------
- * A bat swing is the biggest, fastest motion you can make with a phone, so
- * it's easy to spot: we watch the gyroscope's total spin speed (all three
- * axes combined, so it works however you grip the phone). A burst of spin
- * starts when that speed shoots past `startRate`, and ends once it has clearly
- * peaked (dropped well below its fastest) or slowed right down. The moment of
- * fastest spin is when the bat would meet the ball.
+ * A right-handed swing turns your body to the left, towards the pitcher: seen
+ * from above, the bat whips round anticlockwise. The load before it (cocking
+ * the bat back) turns the other way, and so does bringing the bat back to
+ * your shoulder afterwards. So we measure how fast the phone is spinning
+ * round the *vertical* (using its gravity reading to know which way is up,
+ * so any grip works), with a sign: positive one way, negative the other.
+ * Only a burst in the swing's direction counts; the load simply doesn't.
  *
- * The load: a real swing starts by cocking the bat back, and with a phone in
- * your hands that's a quick burst of spin too. It comes just before the swing,
- * with a dip in between as the phone changes direction. So after each burst
- * we wait a moment (`settleMs`) to see whether a stronger one follows. The
- * strongest burst is the swing; anything weaker before it was the load.
+ *   spin round the vertical
+ *     ▲                swing ← counts
+ *     │                 ╱╲
+ *     │────────────────╱──╲───── startRate
+ *     │               ╱    ╲
+ *     │──────╲──────╱────────────▶ time
+ *     │       ╲__╱ load (the other way): ignored
  *
- *   speed
- *     ▲              swing ← this one counts
- *     │   load        ╱╲
- *     │    ╱╲        ╱  ╲
- *     │───╱──╲──────╱────╲───── startRate
- *     │  ╱    ╲____╱      ╲
- *     └─────────────────────────▶ time
- *                            └ settleMs ┘ then report
+ * We report two moments: when a swing *starts* (crossing `startRate`), so
+ * the batter on screen can start swinging straight away, and when it has
+ * peaked. The moment of fastest spin is when the bat meets the ball.
+ *
+ * Which way is "the swing's direction"? Right-handed is the default. If a
+ * player keeps swinging the other way much harder (a lefty), we switch.
  *
  * The timing
  * ----------
@@ -39,15 +40,13 @@
  * smallest A − T we ever see is the clock difference plus the quickest trip.
  * We keep that smallest value, and subtract an assumed quickest trip.
  */
+import { AXIS_ORDERS, normalize } from '../../aim/aim-math.js';
 
 /**
  * @typedef {typeof import('./index.js').CONFIG['swing']} SwingConfig
- * @typedef {{ t: number, peak: number }} Burst
- *   t: when it was fastest (phone clock, ms); peak: that speed (°/s)
- * @typedef {{ type: 'burst' | 'swing' } & Burst} SwingEvent
- *   burst: a burst of spin just ended; it might be the load, or the swing
- *          (good for starting the batter's animation straight away)
- *   swing: the settled answer: the strongest burst, which is the swing
+ * @typedef {{ type: 'start', t: number } | { type: 'swing', t: number, peak: number }} SwingEvent
+ *   start: a swing just began (t = phone time);
+ *   swing: it peaked at t (phone time) at `peak` degrees per second
  */
 
 /** Total spin speed, however the phone is held: Pythagoras across all three axes. */
@@ -56,59 +55,112 @@ export function spinSpeed({ alpha, beta, gamma }) {
 }
 
 /**
+ * Measures spin round the vertical, however the phone is held.
+ *
+ * The gravity reading says which way is up, but a swing flings the phone
+ * about, which the accelerometer feels too. So we only update our idea of
+ * "up" while the phone is fairly still, and keep it steady through a swing.
+ *
+ * @param {{ axisOrder: keyof typeof AXIS_ORDERS, calmRate: number }} options
+ */
+export function createVerticalSpin({ axisOrder, calmRate }) {
+  /** @type {{ x: number, y: number, z: number } | null} */
+  let up = null;
+  const toAxes = AXIS_ORDERS[axisOrder] ?? AXIS_ORDERS.xyz;
+
+  return {
+    /**
+     * @param {{ alpha: number, beta: number, gamma: number, gx?: number, gy?: number, gz?: number }} sample
+     * @returns {number} degrees per second round the vertical: positive = turning left
+     *   (a right-handed swing). Without a gravity reading, the total spin speed.
+     */
+    read(sample) {
+      const spin = toAxes(sample);
+      const total = Math.hypot(spin.x, spin.y, spin.z);
+      if (sample.gx !== undefined && total < calmRate) {
+        const reading = normalize({ x: sample.gx, y: sample.gy, z: sample.gz });
+        if (reading) {
+          up = up
+            ? (normalize({
+                x: up.x + (reading.x - up.x) * 0.1,
+                y: up.y + (reading.y - up.y) * 0.1,
+                z: up.z + (reading.z - up.z) * 0.1,
+              }) ?? reading)
+            : reading;
+        }
+      }
+      if (!up) return total;
+      return spin.x * up.x + spin.y * up.y + spin.z * up.z;
+    },
+  };
+}
+
+/**
  * @param {SwingConfig} config
  */
 export function createSwingDetector(config) {
+  /** +1: a right-handed swing (turning left); −1: left-handed. */
+  let direction = 1;
+  /** The hardest swing seen each way, to spot a lefty. */
+  const hardest = { 1: 0, [-1]: 0 };
   /**
    * @type {{ stage: 'waiting' }
-   *   | { stage: 'swinging', since: number, peak: number, peakAt: number, best: Burst | null }
-   *   | { stage: 'settling', best: Burst, until: number }
+   *   | { stage: 'swinging', sign: number, since: number, peak: number, peakAt: number }
    *   | { stage: 'resting', until: number }}
    */
   let state = { stage: 'waiting' };
 
   return {
+    get direction() {
+      return direction;
+    },
+
     /**
-     * Feeds one sample. Returns an event when a burst ends or a swing is settled.
+     * Feeds one sample.
      *
-     * @param {number} speed  total spin speed, °/s
-     * @param {number} t      phone timestamp, ms
+     * @param {number} spin  degrees per second round the vertical (signed; see createVerticalSpin)
+     * @param {number} t     phone timestamp, ms
      * @returns {SwingEvent | null}
      */
-    update(speed, t) {
+    update(spin, t) {
       if (state.stage === 'resting') {
         if (t < state.until) return null;
         state = { stage: 'waiting' };
       }
-      if (state.stage === 'waiting' || state.stage === 'settling') {
-        if (speed >= config.startRate) {
-          const best = state.stage === 'settling' ? state.best : null;
-          state = { stage: 'swinging', since: t, peak: speed, peakAt: t, best };
-          return null;
-        }
-        if (state.stage === 'settling' && t >= state.until) {
-          // No stronger burst came: this was the swing.
-          const swing = state.best;
-          state = { stage: 'resting', until: t + config.restMs };
-          return { type: 'swing', ...swing };
-        }
-        return null;
+      const speed = Math.abs(spin);
+      const sign = spin >= 0 ? 1 : -1;
+
+      if (state.stage === 'waiting') {
+        if (speed < config.startRate) return null;
+        state = { stage: 'swinging', sign, since: t, peak: speed, peakAt: t };
+        return sign === direction ? { type: 'start', t } : null;
       }
 
       // Swinging: follow the burst to its fastest point.
-      if (speed > state.peak) {
+      if (sign === state.sign && speed > state.peak) {
         state.peak = speed;
         state.peakAt = t;
       }
-      const pastPeak = speed < state.peak * config.pastPeak;
-      if (pastPeak || speed < config.endRate || t - state.since > config.maxMs) {
-        const burst = { t: state.peakAt, peak: state.peak };
-        // Keep the strongest burst so far, and wait to see if a stronger one follows.
-        const best = state.best && state.best.peak >= burst.peak ? state.best : burst;
-        state = { stage: 'settling', best, until: t + config.settleMs };
-        return { type: 'burst', ...burst };
+      const along = sign === state.sign ? speed : 0;
+      const pastPeak = along < state.peak * config.pastPeak;
+      if (!(pastPeak || along < config.endRate || t - state.since > config.maxMs)) return null;
+
+      const burst = { sign: state.sign, t: state.peakAt, peak: state.peak };
+      hardest[burst.sign] = Math.max(hardest[burst.sign], burst.peak);
+      // A lefty: a real, hard swing the other way, much harder than any our way.
+      const other = hardest[-direction];
+      if (other >= config.leftyFrom && other > hardest[direction] * config.switchHandsAt) {
+        direction = -direction;
       }
-      return null;
+
+      if (burst.sign !== direction) {
+        // The load, or bringing the bat back: not a swing.
+        state = { stage: 'waiting' };
+        return null;
+      }
+      // Ignore the follow-through and getting set again.
+      state = { stage: 'resting', until: t + config.restMs };
+      return { type: 'swing', t: burst.t, peak: burst.peak };
     },
 
     reset() {

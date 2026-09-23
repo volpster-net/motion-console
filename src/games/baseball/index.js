@@ -14,6 +14,7 @@
  *   sounds.js  sound effects, made with the shared synthesizer
  */
 import './baseball.css';
+import { loadAimSettings } from '../../aim/index.js';
 import { playerColor, playerLabel } from '../../core/players.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
 import { createPersonalBest } from '../shared/personal-best.js';
@@ -22,7 +23,12 @@ import meta from './meta.js';
 import { RELEASE_AT } from './pitcher.js';
 import { createRenderer } from './render.js';
 import { createSounds } from './sounds.js';
-import { createClockMatch, createSwingDetector, normalizeSwing, spinSpeed } from './swing.js';
+import {
+  createClockMatch,
+  createSwingDetector,
+  createVerticalSpin,
+  normalizeSwing,
+} from './swing.js';
 
 /**
  * Every number that shapes how the game feels, in one place. The physics
@@ -111,37 +117,42 @@ export const CONFIG = {
     /** In the left-hand batter's box, beside the plate. */
     stands: { x: -0.8, y: 0, z: 0.1 },
     /** The swing, from where it starts on screen to the follow-through. */
-    swingMs: 380,
+    swingMs: 450,
     /**
-     * The phone reports a swing a moment after it happens, so the animation
-     * starts almost at the point of contact, to stay in step with you.
+     * The batter starts swinging the moment your swing begins, from the
+     * launch (after the stance and stride), so the bat meets the ball about
+     * when yours does.
      */
-    startAt: 0.38,
+    startAt: 0.34,
     /** Hold the follow-through, then settle back into the stance. */
     holdMs: 500,
     returnMs: 400,
   },
 
-  /** Spotting a swing from the gyroscope's total spin speed (°/s). */
+  /**
+   * Spotting a swing from how fast the phone spins round the vertical (°/s),
+   * in the swing's direction (see swing.js).
+   */
   swing: {
     /** Spinning faster than this starts a swing. Adjusting your grip stays well below it. */
-    startRate: 500,
+    startRate: 450,
     /** The swing is over once it slows below this… */
     endRate: 200,
     /** …or drops below this fraction of its fastest (it has clearly peaked). */
     pastPeak: 0.6,
     /** A swing can't last longer than this. */
     maxMs: 400,
-    /**
-     * After a burst of spin, wait this long for a stronger one: the first is
-     * often the load (cocking the bat back), and the stronger one the swing.
-     */
-    settleMs: 300,
     /** After a swing, ignore the follow-through and getting set again. */
     restMs: 700,
+    /** Only update which way is up while spinning slower than this (the phone is fairly still). */
+    calmRate: 120,
+    /** Switch to left-handed after a swing the other way at least this fast… */
+    leftyFrom: 1400,
+    /** …and this many times faster than any right-handed one. */
+    switchHandsAt: 1.3,
     /** Swing speeds that count as the weakest (0) and strongest (1). */
-    weakest: 500,
-    strongest: 1600,
+    weakest: 450,
+    strongest: 1500,
   },
 
   /** Judging when you swung, relative to the ball reaching the plate. */
@@ -154,11 +165,8 @@ export const CONFIG = {
     biasMs: 0,
     /** The quickest a message could possibly reach the console (see swing.js). */
     quickestTripMs: 30,
-    /**
-     * How long after the ball passes the plate we still wait for a swing's
-     * message (it's settled a moment after the swing; see swing.js).
-     */
-    lateGraceMs: 600,
+    /** How long after the ball passes the plate we still wait for a swing's message. */
+    lateGraceMs: 350,
   },
 
   /** What a hit does, from dead on (best) to barely touched (worst). */
@@ -433,6 +441,10 @@ function createSession(container, controller) {
 
   // ---- Swinging -----------------------------------------------------------
   const detector = createSwingDetector(CONFIG.swing);
+  const verticalSpin = createVerticalSpin({
+    axisOrder: loadAimSettings().axisOrder,
+    calmRate: CONFIG.swing.calmRate,
+  });
   const clock = createClockMatch(CONFIG.timing);
   let paused = false;
   let pausedAt = 0;
@@ -463,17 +475,11 @@ function createSession(container, controller) {
     renderer.text(timingLabel(pitch.contact), now, 'timing');
   }
 
-  /** Is the ball on its way, and a swing at `at` not hopelessly early for it? */
-  function couldReachBall(at) {
-    if (phase.name !== 'batting' || phase.pitch.stage !== 'pitch') return false;
-    return at - phase.pitch.plateAt >= -CONFIG.timing.windowMs;
-  }
-
   /** Plays the batter's swing on screen, once per swing. */
   let lastAnimatedAt = -Infinity;
   function animateSwing() {
     const now = performance.now();
-    if (now - lastAnimatedAt < CONFIG.swing.settleMs + 300) return;
+    if (now - lastAnimatedAt < CONFIG.swing.restMs) return;
     lastAnimatedAt = now;
     renderer.swingBat(now);
   }
@@ -487,19 +493,17 @@ function createSession(container, controller) {
   cleanups.push(
     controller.onInput(INPUT.MOTION, (sample, { player }) => {
       if (paused || player.id !== activePlayer()?.id) return;
-      const { alpha, beta, gamma, t } = /** @type {any} */ (sample);
-      clock.observe(t, performance.now());
-      const event = detector.update(spinSpeed({ alpha, beta, gamma }), t);
+      const reading = /** @type {any} */ (sample);
+      clock.observe(reading.t, performance.now());
+      const event = detector.update(verticalSpin.read(reading), reading.t);
       if (!event) return;
-      const at = clock.toConsole(event.t);
-      if (event.type === 'burst') {
-        // Start the batter's swing straight away if this burst could reach the
-        // ball. (A burst long before the pitch arrives is probably the load.)
-        if (couldReachBall(at)) animateSwing();
-      } else {
-        // The settled swing: the one that counts.
+      if (event.type === 'start') {
+        // The swing has begun: start the batter's swing now, so the bat comes
+        // through with you rather than after you.
         animateSwing();
-        swingAt(at, normalizeSwing(event.peak, CONFIG.swing), player);
+      } else {
+        animateSwing(); // in case the start was missed
+        swingAt(clock.toConsole(event.t), normalizeSwing(event.peak, CONFIG.swing), player);
       }
     }),
     controller.onInput(INPUT.BUTTON, ({ id: button, down }, { player }) => {
@@ -641,10 +645,7 @@ function createSession(container, controller) {
       pitcher: pitcherProgress(pitch, now),
       holdingBall: !pitch || pitch.stage === 'windup',
       pitch: pitch?.path ?? null,
-      pitchT:
-        pitch && (pitch.stage === 'pitch' || (pitch.stage === 'result' && !pitch.flight))
-          ? (now - pitch.releaseAt) / pitch.travelMs
-          : null,
+      pitchT: pitch ? shownPitchT(pitch, now) : null,
       flight: pitch?.flight ?? null,
       landings: stats.landings,
       batterColor: playerColor(player?.slot ?? 1),
@@ -654,6 +655,24 @@ function createSession(container, controller) {
     setHud('homers', String(stats.homers));
     setHud('pitch', pitchNumber ? `${pitchNumber} / ${CONFIG.round.pitches}` : '–');
     setHud('longest', stats.longest ? `${Math.round(toFeet(stats.longest))} ft` : '–');
+  }
+
+  /**
+   * How far along its path to draw the pitch (1 = at the plate), or null.
+   *
+   * Just past the plate, the ball slows almost to a stop while a swing's
+   * message could still be on its way from the phone. So when a hit comes in
+   * a moment late, the ball is still right there at the bat, not already in
+   * the catcher's mitt. If nobody swings, it then carries on to the catcher.
+   */
+  function shownPitchT(pitch, now) {
+    if (pitch.stage === 'windup' || pitch.flight) return null;
+    const t = (now - pitch.releaseAt) / pitch.travelMs;
+    if (t <= 1) return t;
+    const { windowMs, lateGraceMs } = CONFIG.timing;
+    const hang = (windowMs + lateGraceMs) / pitch.travelMs;
+    const crawl = 0.12; // how fast it creeps on while waiting, compared with full speed
+    return 1 + Math.min(t - 1, hang) * crawl + Math.max(0, t - 1 - hang);
   }
 
   /**
