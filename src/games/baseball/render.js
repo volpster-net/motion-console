@@ -607,7 +607,7 @@ export function createRenderer(canvas, config) {
         // Past the plate, the ball goes on into the catcher's mitt, just behind you.
         if (p.z > -1.5) drawBall(p);
       }
-      drawBatter(now, batterColor, reach);
+      if (batterColor) drawBatter(now, batterColor, reach);
       drawMap(flight, landings);
       drawTexts(now);
     },
