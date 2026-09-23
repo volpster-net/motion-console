@@ -173,6 +173,10 @@ export const CONFIG = {
     drag: 0.004,
     /** A real ballpark's shape: shortest down the lines, deepest in centre. */
     fence: { linesFt: 330, centreFt: 400, heightFt: 10 },
+    /** The stands behind the fence: they start this far back, run this deep, and rise to this height (m). */
+    stands: { startM: 2, depthM: 28, topM: 22 },
+    /** Fans in the stands: rows of seats, and how many seats are filled. */
+    crowd: { rows: 9, filled: 0.85 },
     /** The ball is drawn this many times its real size, so it's easy to see. */
     ballScale: 3,
     /**
@@ -551,6 +555,7 @@ function createSession(container, controller) {
         stepFlight(pitch.flight, seconds, CONFIG);
         if (pitch.flight.homer && !wasHomer) {
           sounds.homer();
+          renderer.cheer(now);
           const player = activePlayer();
           if (player) controller.vibrate(player.id, CONFIG.vibration.homer);
         }

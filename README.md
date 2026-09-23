@@ -303,7 +303,9 @@ you can.
   swing and a miss. Every swing tells you how far off you were ("Late · 85 ms"), so you can learn
   it. Swing speed adds a little distance. The ball flies with gravity and air resistance.
 - **A real ballpark**, in feet: the fence is 330 ft down the lines and 400 ft to centre, so pulled
-  home runs are easier, like the real thing.
+  home runs are easier, like the real thing. The stands behind it are full of fans (randomised
+  shirts and skin tones), who jump up and cheer when you hit one out, and a home run comes down in
+  the seats.
 - **The pitcher** has a full delivery: set, leg kick, stride, arm cocked, over-the-top release,
   and follow-through, and the ball leaves from his hand. He throws **fastballs, sinkers, sliders,
   curveballs, and changeups**, each with its own speed and movement (the first three pitches are
@@ -312,9 +314,10 @@ you can.
   readout shows each pitch's type and speed. Timing still decides the hit, so reading the speed
   matters.
 - **Your batter**, in your player colour, stands side-on in the box facing the plate, front
-  shoulder to the pitcher, with a bat waggle. When you swing, his hips and shoulders turn and the
-  bat sweeps round through the zone to a full follow-through. He's a 3D skeleton seen through the
-  same camera as the ballpark, which is what makes him look right from behind the plate.
+  shoulder to the pitcher, with a bat waggle. He's a 3D skeleton seen through the same camera as
+  the ballpark. His swing is a chain, like a real one: the hips turn first, the shoulders follow,
+  and the bat whips round at a fixed length in a true arc, fastest through contact and slowing
+  into the follow-through ([`batter.js`](src/games/baseball/batter.js)).
 - The camera sits behind home plate, close enough that the pitch visibly grows as it comes in,
   and tilts up to follow a hit. A small top-down map shows where every hit landed.
 - Results show home runs, hits, longest and total distance, with personal bests for home runs
@@ -396,7 +399,7 @@ src/
       swing.js              swing detection and phone-clock matching (pure, tested)
       figure.js             animated people from key poses
       pitcher.js            the pitcher's delivery
-      batter.js             your batter's stance and swing
+      batter.js             your batter's stance and swing (a turning chain, tested)
       render.js             canvas drawing: ballpark, people, ball, field map
       sounds.js             sound effects
     basketball/             Milestone 5: Hoops

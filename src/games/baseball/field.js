@@ -34,6 +34,7 @@
  * @property {'flying' | 'landed' | 'wall'} state
  * @property {boolean} fair     inside the foul lines
  * @property {boolean} homer    cleared the fence
+ * @property {boolean} [inStands] came down in the seats beyond the fence
  * @property {number} distance  how far from home plate it is (flat), m
  * @property {Vec[]} trail      recent positions, for drawing
  */
@@ -200,6 +201,21 @@ export function launch(contact, config) {
   };
 }
 
+/**
+ * How high the seats are, `beyond` metres past the outfield fence. The stands
+ * start just behind the fence at the fence's height and rise steadily towards
+ * the back, like real bleachers.
+ *
+ * @param {number} beyond
+ * @param {Config} config
+ */
+export function seatsHeight(beyond, config) {
+  const { startM, depthM, topM } = config.field.stands;
+  const fenceHeight = config.field.fence.heightFt * FEET_TO_M;
+  const k = Math.min(1, Math.max(0, (beyond - startM) / depthM));
+  return fenceHeight + k * (topM - fenceHeight);
+}
+
 /** The angle out from home plate, in degrees: 0 = centre field, negative = left. */
 const angleOf = (p) => (Math.atan2(p.x, p.z) * 180) / Math.PI;
 
@@ -246,6 +262,16 @@ export function stepFlight(flight, seconds, config) {
         return;
       }
     }
+    // A home run comes down in the stands, and stays there.
+    if (flight.homer) {
+      const seats = seatsHeight(flight.distance - fence, config);
+      if (flight.p.y <= seats) {
+        flight.p.y = seats;
+        flight.state = 'landed';
+        flight.inStands = true;
+        return;
+      }
+    }
     if (flight.p.y <= 0) {
       flight.p.y = 0;
       flight.state = 'landed';
@@ -265,7 +291,13 @@ export function stepFlight(flight, seconds, config) {
 export function flyToEnd(contact, config) {
   const flight = launch(contact, config);
   for (let i = 0; i < 2000 && flight.state === 'flying'; i++) stepFlight(flight, 1 / 60, config);
-  return { distance: flight.distance, homer: flight.homer, wall: flight.state === 'wall' };
+  return {
+    distance: flight.distance,
+    homer: flight.homer,
+    wall: flight.state === 'wall',
+    inStands: Boolean(flight.inStands),
+    landedAt: { ...flight.p },
+  };
 }
 
 /**

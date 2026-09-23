@@ -136,6 +136,12 @@ describe('flight', () => {
     expect(result.homer).toBe(false);
   });
 
+  it('lands a home run up in the stands, not on the ground behind the fence', () => {
+    const result = fly(0);
+    expect(result.inStands).toBe(true);
+    expect(result.landedAt.y).toBeGreaterThan(CONFIG.field.fence.heightFt / 3.28084 - 0.01);
+  });
+
   it('never counts a foul ball as a home run', () => {
     expect(fly(windowMs - 5, 1).homer).toBe(false);
   });

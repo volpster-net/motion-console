@@ -4,7 +4,7 @@
  * land. Every frame is drawn from scratch; far things first, near things last.
  */
 import { createBatter } from './batter.js';
-import { fenceAt, pitchPosition, project, toFeet } from './field.js';
+import { fenceAt, pitchPosition, project, seatsHeight, toFeet } from './field.js';
 import { drawFigure } from './figure.js';
 import { pitcherPose } from './pitcher.js';
 
@@ -55,6 +55,8 @@ export function createRenderer(canvas, config) {
    */
   let lift = 0;
   let lastDrawAt = null;
+  /** When the crowd started cheering (a home run), so they jump for a few seconds. */
+  let cheerAt = -Infinity;
 
   const to = (p) => {
     const q = project(p, size, config);
@@ -107,7 +109,70 @@ export function createRenderer(canvas, config) {
   /** The fence's shape, extended past the foul lines for the side stands. */
   const fenceOut = (angle) => fence(Math.min(45, Math.abs(angle)));
 
-  function drawPark() {
+  /** The fans, made once: a seat in the stands, a shirt colour, a skin tone. */
+  const fans = createCrowd();
+
+  function createCrowd() {
+    const { rows, filled } = config.field.crowd;
+    const shirts = [
+      '#e5484d',
+      '#1f9bf0',
+      '#f2c200',
+      '#23b566',
+      '#ffffff',
+      '#1d2733',
+      '#f28a2e',
+      '#8e5bd6',
+      '#c8373c',
+    ];
+    const skins = ['#f1c39b', '#e8b48c', '#c68a5e', '#8d5a3b', '#5c3a26'];
+    // A fixed seed, so the same fans sit in the same seats every time.
+    let seed = 7;
+    const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    const list = [];
+    for (let row = rows - 1; row >= 0; row--) {
+      for (let angle = -80; angle <= 80; angle += 1.3) {
+        if (random() > filled) continue; // an empty seat
+        list.push({
+          angle: angle + (random() - 0.5) * 0.8,
+          row,
+          shirt: shirts[Math.floor(random() * shirts.length)],
+          skin: skins[Math.floor(random() * skins.length)],
+          phase: random() * Math.PI * 2,
+        });
+      }
+    }
+    return list; // back rows first, so nearer fans are drawn over them
+  }
+
+  /** The fans, sitting in their seats, jumping up when the crowd cheers. */
+  function drawCrowd(now) {
+    const { startM, depthM } = config.field.stands;
+    const { rows } = config.field.crowd;
+    const cheering = now - cheerAt < 3500;
+    for (const fan of fans) {
+      const beyond = startM + ((fan.row + 0.5) / rows) * depthM;
+      const seat = ground(fenceOut(fan.angle) + beyond, fan.angle, seatsHeight(beyond, config));
+      const jump = cheering ? Math.abs(Math.sin((now - cheerAt) / 130 + fan.phase)) * 0.5 : 0;
+      const feet = to({ ...seat, y: seat.y + jump });
+      const s = feet.scale;
+      if (s < 0.3) continue; // too far round the side to see
+      const w = Math.max(1.5, 0.5 * s);
+      const h = Math.max(2, 0.75 * s);
+      ctx.fillStyle = fan.shirt;
+      ctx.fillRect(feet.x - w / 2, feet.y - h, w, h);
+      ctx.fillStyle = fan.skin;
+      const head = Math.max(1.2, 0.26 * s);
+      ctx.fillRect(feet.x - head / 2, feet.y - h - head, head, head);
+      if (cheering) {
+        // Arms up!
+        ctx.fillRect(feet.x - w / 2 - head * 0.4, feet.y - h - head * 1.3, head * 0.35, head * 1.1);
+        ctx.fillRect(feet.x + w / 2, feet.y - h - head * 1.3, head * 0.35, head * 1.1);
+      }
+    }
+  }
+
+  function drawPark(now) {
     const horizonY = config.field.camera.horizon * size.height + lift;
 
     // Sky.
@@ -124,13 +189,17 @@ export function createRenderer(canvas, config) {
     ctx.fillStyle = grass;
     ctx.fillRect(0, horizonY, size.width, size.height - horizonY);
 
-    // Stands rising behind the outfield fence, all the way round.
-    const standsBack = arc((a) => fenceOut(a) + 30, -80, 80, 22);
-    const standsFront = arc((a) => fenceOut(a) + 2, 80, -80, fenceHeight);
+    // Stands rising behind the outfield fence, all the way round, with the fans in them.
+    const { startM, depthM, topM } = config.field.stands;
+    const back = startM + depthM;
+    const standsBack = arc((a) => fenceOut(a) + back, -80, 80, topM);
+    const standsFront = arc((a) => fenceOut(a) + startM, 80, -80, fenceHeight);
     shape([...standsBack, ...standsFront], COLORS.stands);
-    const upper = arc((a) => fenceOut(a) + 30, -80, 80, 22);
-    const lower = arc((a) => fenceOut(a) + 16, 80, -80, 12);
+    const middle = startM + depthM / 2;
+    const upper = arc((a) => fenceOut(a) + back, -80, 80, topM);
+    const lower = arc((a) => fenceOut(a) + middle, 80, -80, seatsHeight(middle, config));
     shape([...upper, ...lower], COLORS.standsLight);
+    drawCrowd(now);
 
     // The outfield fence, with a yellow top rail.
     const fenceTopPts = arc(fenceOut, -46, 46, fenceHeight);
@@ -456,7 +525,13 @@ export function createRenderer(canvas, config) {
     },
 
     /** Moves every animation later by `ms`, so they freeze during a pause. */
+    /** The crowd jumps up and cheers (a home run). */
+    cheer(now) {
+      cheerAt = now;
+    },
+
     shift(ms) {
+      cheerAt += ms;
       texts = texts.map((t) => ({ ...t, at: t.at + ms }));
       if (Number.isFinite(batSwungAt)) batSwungAt += ms;
     },
@@ -486,7 +561,7 @@ export function createRenderer(canvas, config) {
       const target = Math.max(0, size.height * 0.24 - ballY);
       lift += (target - lift) * Math.min(1, frameS * 5);
       ctx.clearRect(0, 0, size.width, size.height);
-      drawPark();
+      drawPark(now);
       drawPitcher(pitcher, holdingBall);
       if (flight) {
         drawTrail(flight.trail);
