@@ -1,5 +1,6 @@
 /**
- * Simple animated people, for the pitcher and the batter.
+ * Simple animated people, for the pitcher (your batter has his own, more
+ * detailed drawing: batter-art.js).
  *
  * A person is a skeleton: a handful of joints (head, shoulders, elbows,
  * hands, hips, knees, feet), each a point in metres: [x, y] for a flat
@@ -80,8 +81,6 @@ export function lerpPose(a, b, k) {
  * @param {number} pxPerMetre
  * @param {{
  *   jersey: string, pants: string, skin: string, cap: string,
- *   facing: 'front' | 'back',      front shows a face; back shows the back of a helmet
- *   hands?: 'separate' | 'together', together = both hands on one point, `hands` (a batter's grip)
  *   glove?: string,                 draws a glove on the left hand
  *   frontArm?: 'left' | 'right',    which arm is drawn over the body
  * }} style
@@ -100,10 +99,9 @@ export function drawFigure(ctx, pose, place, pxPerMetre, style) {
     joints.map(at).forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
     ctx.stroke();
   };
-  const handOf = (side) => (style.hands === 'together' ? 'hands' : `${side}Hand`);
   const arm = (side) => {
     limb([`${side}Shoulder`, `${side}Elbow`], 0.12, style.jersey);
-    limb([`${side}Elbow`, handOf(side)], 0.09, style.skin);
+    limb([`${side}Elbow`, `${side}Hand`], 0.09, style.skin);
   };
   const backArm = style.frontArm === 'left' ? 'r' : 'l';
   const frontArm = style.frontArm === 'left' ? 'l' : 'r';
@@ -134,7 +132,7 @@ export function drawFigure(ctx, pose, place, pxPerMetre, style) {
   limb(['rHip', 'lHip'], 0.05, '#1d2733');
   limb(['neck', 'chest'], 0.1, style.skin);
 
-  // Head: a face and cap from the front, a helmet from behind.
+  // Head: a face and a cap.
   const head = at('head');
   const r = px(0.12);
   ctx.fillStyle = style.skin;
@@ -143,19 +141,9 @@ export function drawFigure(ctx, pose, place, pxPerMetre, style) {
   ctx.fill();
   ctx.fillStyle = style.cap;
   ctx.beginPath();
-  if (style.facing === 'front') {
-    ctx.arc(head.x, head.y - r * 0.15, r * 1.05, Math.PI, 0); // cap
-    ctx.fill();
-    ctx.fillRect(head.x - r * 1.3, head.y - r * 0.2, r * 2.6, r * 0.28); // brim
-  } else {
-    // From behind, the helmet covers the whole head, with its ear flap and a little brim.
-    ctx.arc(head.x, head.y, r * 1.15, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(head.x - r * 0.2, head.y - r * 0.1, r * 1.45, r * 0.3);
-    ctx.beginPath();
-    ctx.ellipse(head.x - r * 0.35, head.y + r * 0.45, r * 0.4, r * 0.55, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.arc(head.x, head.y - r * 0.15, r * 1.05, Math.PI, 0); // cap
+  ctx.fill();
+  ctx.fillRect(head.x - r * 1.3, head.y - r * 0.2, r * 2.6, r * 0.28); // brim
 
   arm(frontArm);
 

@@ -8,8 +8,10 @@
  *   field.js   the ballpark and the ball: pitches, hits, flight (tested)
  *   swing.js   spotting a swing and when it really happened (tested)
  *   pitcher.js the pitcher's delivery, as key poses
- *   batter.js  your batter's swing, as key poses
- *   figure.js  drawing and animating those people
+ *   batter.js  your batter's swing, played from a real swing (tested)
+ *   swing-frames.js  that swing's poses, traced from a slow-motion video
+ *   batter-art.js    drawing your batter in helmet, jersey, and gloves
+ *   figure.js  drawing and animating the pitcher
  *   render.js  drawing the ballpark, the people, and the ball
  *   sounds.js  sound effects, made with the shared synthesizer
  */
@@ -121,16 +123,22 @@ export const CONFIG = {
     /** In the left-hand batter's box, beside the plate. */
     stands: { x: -0.8, y: 0, z: 0.1 },
     /** The swing, from where it starts on screen to the follow-through. */
-    swingMs: 450,
+    swingMs: 540,
     /**
      * The batter starts swinging the moment your swing begins, from the
-     * launch (after the stance and stride), so the bat meets the ball about
-     * when yours does.
+     * launch (after the stance and stride, with the barrel dropped back
+     * behind him), so the bat meets the ball about when yours does.
      */
-    startAt: 0.34,
+    startAt: 0.38,
     /** Hold the follow-through, then settle back into the stance. */
     holdMs: 500,
-    returnMs: 400,
+    returnMs: 650,
+    /**
+     * His leg kick and stride as the pitch comes in, at the speed a real
+     * hitter does it: it takes `ms`, and the stride lands `readyMs` before
+     * the ball reaches the plate, so he's loaded and ready to swing.
+     */
+    load: { ms: 380, readyMs: 120 },
   },
 
   /**
@@ -661,6 +669,7 @@ function createSession(container, controller) {
       pitch: pitch?.path ?? null,
       pitchT: pitch ? shownPitchT(pitch, now) : null,
       flight: pitch?.flight ?? null,
+      batterLoad: batterLoad(pitch, now),
       landings: stats.landings,
       batterColor: playerColor(player?.slot ?? 1),
       // The strike zone during play, marking where the pitch crossed once it has.
@@ -696,6 +705,23 @@ function createSession(container, controller) {
     const { windowMs, lateGraceMs } = CONFIG.timing;
     const hang = (windowMs + lateGraceMs) / pitch.travelMs;
     return 1 + Math.max(0, t - 1 - hang);
+  }
+
+  /**
+   * How far through his leg kick and stride the batter is (0 to 1), timed so
+   * the stride lands just before the ball reaches the plate. Once the pitch
+   * has gone by, it drops back to 0 and he settles into his stance again.
+   */
+  function batterLoad(pitch, now) {
+    if (!pitch || pitch.flight) return 0;
+    const plateAt =
+      pitch.stage === 'windup'
+        ? pitch.stageAt + CONFIG.round.windupMs + pitch.travelMs
+        : pitch.plateAt;
+    const toPlate = plateAt - now;
+    if (toPlate < -CONFIG.timing.lateGraceMs) return 0;
+    const { ms, readyMs } = CONFIG.batter.load;
+    return Math.min(1, Math.max(0, (ms - (toPlate - readyMs)) / ms));
   }
 
   /**

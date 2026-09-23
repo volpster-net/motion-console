@@ -3,10 +3,14 @@
  * the pitcher, your batter, the ball, and a small top-down map of where hits
  * land. Every frame is drawn from scratch; far things first, near things last.
  */
-import { createBatter } from './batter.js';
+import { drawBatterArt } from './batter-art.js';
+import { CONTACT_AT, createBatter } from './batter.js';
 import { fenceAt, pitchPosition, project, seatsHeight, toFeet } from './field.js';
 import { drawFigure } from './figure.js';
 import { pitcherPose } from './pitcher.js';
+
+/** How long the bat's swoosh lingers, ms. */
+const TRAIL_MS = 70;
 
 const COLORS = {
   skyTop: '#8fc8f0',
@@ -28,8 +32,6 @@ const COLORS = {
   ball: '#ffffff',
   seam: '#e5484d',
   shadow: 'rgb(0 0 0 / 0.22)',
-  bat: '#c98a4b',
-  batDark: '#8a5a2b',
   zone: 'rgb(255 255 255 / 0.55)',
   text: { timing: '#1d2733', hit: '#1f9bf0', homer: '#f2a900', miss: '#6b7785' },
 };
@@ -55,6 +57,11 @@ export function createRenderer(canvas, config) {
    */
   let lift = 0;
   let lastDrawAt = null;
+  /** Where the bat has just been during a swing (screen points), for its swoosh. */
+  let batTrail =
+    /** @type {Array<{ at: number, hands: { x: number, y: number }, tip: { x: number, y: number } }>} */ ([]);
+  /** How far through his leg kick and stride the batter is (0 to 1, see batterLoad in index.js). */
+  let load = 0;
   /** When the crowd started cheering (a home run), so they jump for a few seconds. */
   let cheerAt = -Infinity;
 
@@ -295,7 +302,6 @@ export function createRenderer(canvas, config) {
       pants: COLORS.pants,
       skin: COLORS.skin,
       cap: COLORS.pitcherCap,
-      facing: 'front',
       glove: COLORS.glove,
       frontArm: 'right',
     });
@@ -310,50 +316,64 @@ export function createRenderer(canvas, config) {
 
   /**
    * Your batter, in the left-hand batter's box, in your player colour
-   * (batter.js has the swing). His joints are 3D points around where he
-   * stands, seen through the same camera as the rest of the ballpark.
+   * (batter.js has the swing, batter-art.js draws him). He's drawn flat, as
+   * the camera sees him, scaled to where he stands.
+   *
+   * @param {number} now
+   * @param {string} color
+   * @param {{ x: number, y: number, z?: number } | null} reach  where the pitch crosses the plate
+   * @param {number} load  0 to 1: his leg kick and stride as the pitch comes in
    */
-  function drawBatter(now, color, reach) {
-    const { stands } = config.batter;
-    // Where the pitch crosses the plate, relative to where the batter stands.
-    const local = reach ? [reach.x - stands.x, reach.y, (reach.z ?? 0) - stands.z] : null;
-    const pose = batter.pose(now - batSwungAt, now, local);
-    const s = to(stands).scale;
-    const place = ([x, y, z]) => to({ x: stands.x + x, y, z: stands.z + z });
-    drawFigure(ctx, pose, place, s, {
-      jersey: color,
-      pants: COLORS.pants,
-      skin: COLORS.skin,
-      cap: color,
-      facing: 'back',
-      hands: 'together',
-      frontArm: 'right',
-    });
-    // The bat: a thin handle in the hands, widening to the barrel.
-    const hands = place(/** @type {[number, number]} */ (pose.hands));
-    const tip = place(/** @type {[number, number]} */ (pose.batTip));
-    const angle = Math.atan2(tip.y - hands.y, tip.x - hands.x);
-    const length = Math.hypot(tip.x - hands.x, tip.y - hands.y);
-    const handle = 0.02 * s;
-    const barrel = 0.045 * s;
-    ctx.save();
-    ctx.translate(hands.x, hands.y);
-    ctx.rotate(angle);
-    const wood = ctx.createLinearGradient(0, 0, length, 0);
-    wood.addColorStop(0, COLORS.batDark);
-    wood.addColorStop(0.35, COLORS.bat);
-    wood.addColorStop(1, COLORS.bat);
-    ctx.fillStyle = wood;
-    ctx.beginPath();
-    ctx.moveTo(-0.08 * s, -handle);
-    ctx.lineTo(length * 0.45, -handle * 1.2);
-    ctx.quadraticCurveTo(length * 0.7, -barrel, length - barrel, -barrel);
-    ctx.arc(length - barrel, 0, barrel, -Math.PI / 2, Math.PI / 2);
-    ctx.quadraticCurveTo(length * 0.7, barrel, length * 0.45, handle * 1.2);
-    ctx.lineTo(-0.08 * s, handle);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+  function drawBatter(now, color, reach, load) {
+    const feet = to(config.batter.stands);
+    const perUnit = feet.scale / 200;
+    // Where the pitch crosses the plate, in his art units.
+    let ball = null;
+    if (reach) {
+      const at = to({ x: reach.x, y: reach.y, z: reach.z ?? 0 });
+      ball = /** @type {[number, number]} */ ([
+        (at.x - feet.x) / perUnit,
+        (at.y - feet.y) / perUnit,
+      ]);
+    }
+    const sinceSwing = now - batSwungAt;
+    const pose = batter.pose(sinceSwing, now, ball, load);
+    drawBatterArt(ctx, pose, { x: feet.x, y: feet.y, perUnit, jersey: color });
+    // Remember where the bat has just been while he swings, for the swoosh behind it.
+    const onScreen = (p) => ({ x: feet.x + p[0] * perUnit, y: feet.y + p[1] * perUnit });
+    // Only while the bat sweeps across the plate in full view, through contact:
+    // when it points towards or away from us, a swoosh would just be a smear.
+    const { swingMs, startAt } = config.batter;
+    const moment = startAt + (1 - startAt) * (sinceSwing / swingMs);
+    const batLength = Math.hypot(pose.batTip[0] - pose.lHand[0], pose.batTip[1] - pose.lHand[1]);
+    if (moment >= CONTACT_AT - 0.01 && moment <= CONTACT_AT + 0.13 && batLength > 120) {
+      batTrail.push({ at: now, hands: onScreen(pose.lHand), tip: onScreen(pose.batTip) });
+    } else {
+      batTrail = [];
+    }
+    batTrail = batTrail.filter((b) => now - b.at >= 0 && now - b.at < TRAIL_MS);
+    drawBatTrail(now);
+  }
+
+  /**
+   * A quick white swoosh where the bat has just swept through, like Wii
+   * Sports: it shows how fast the bat is moving, and fades in a blink.
+   */
+  function drawBatTrail(now) {
+    const along = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
+    for (let i = 1; i < batTrail.length; i++) {
+      const [a, b] = [batTrail[i - 1], batTrail[i]];
+      const fade = 1 - (now - a.at) / TRAIL_MS;
+      ctx.fillStyle = `rgb(255 255 255 / ${0.3 * fade})`;
+      ctx.beginPath();
+      const inner = [along(a.hands, a.tip, 0.4), along(b.hands, b.tip, 0.4)];
+      ctx.moveTo(inner[0].x, inner[0].y);
+      ctx.lineTo(a.tip.x, a.tip.y);
+      ctx.lineTo(b.tip.x, b.tip.y);
+      ctx.lineTo(inner[1].x, inner[1].y);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   /**
@@ -578,12 +598,24 @@ export function createRenderer(canvas, config) {
      *   pitch: import('./field.js').Pitch | null,
      *   pitchT: number | null,         how far the pitch has travelled (1 = at the plate)
      *   flight: import('./field.js').Flight | null,
+     *   batterLoad?: number,           the batter's leg kick and stride, 0 to 1 (index.js)
      *   landings: Array<{ x: number, z: number, kind: 'homer' | 'fair' | 'foul' }>,
      *   batterColor: string,
      *   zone: { mark: { x: number, y: number } | null } | null,  the strike zone, if shown
      * }} scene
      */
-    draw({ now, pitcher, holdingBall, pitch, pitchT, flight, landings, batterColor, zone }) {
+    draw({
+      now,
+      pitcher,
+      holdingBall,
+      pitch,
+      pitchT,
+      flight,
+      batterLoad = 0,
+      landings,
+      batterColor,
+      zone,
+    }) {
       const reach = pitch ? pitch.target : null;
       if (size.height === 0) return;
       // Follow a hit ball: tilt up just enough to keep it below the top bar, smoothly.
@@ -607,7 +639,9 @@ export function createRenderer(canvas, config) {
         // Past the plate, the ball goes on into the catcher's mitt, just behind you.
         if (p.z > -1.5) drawBall(p);
       }
-      if (batterColor) drawBatter(now, batterColor, reach);
+      // Straight into the stride as the pitch comes; back to the stance gently if he lets it go by.
+      load = batterLoad >= load ? batterLoad : Math.max(batterLoad, load - frameS * 1.5);
+      if (batterColor) drawBatter(now, batterColor, reach, load);
       drawMap(flight, landings);
       drawTexts(now);
     },
