@@ -142,7 +142,7 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
     const end = aimRates(aimer, sample);
     aimer.rates = end;
     if (motionListeners.size > 0) {
-      const body = bodyOf(aimer, sample);
+      const body = bodyOf(aimer, sample, AXIS_ORDERS[settings.axisOrder] ?? AXIS_ORDERS.xyz);
       for (const fn of motionListeners) fn(id, end, sample.t, body);
     }
     const average = { yaw: (start.yaw + end.yaw) / 2, pitch: (start.pitch + end.pitch) / 2 };
@@ -153,11 +153,14 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
 
   let lastFrameAt = null;
   /**
-   * @typedef {{ tilt: number, lift: number }} Body
+   * @typedef {{ tilt: number, lift: number, twist: number }} Body
    *   tilt: how far the phone's top edge points above level, in degrees
    *         (0 = flat, 90 = pointing straight up, negative = pointing down).
    *   lift: how hard the phone is being pushed upwards right now, in m/s²
    *         (0 = held still; positive = speeding up upwards).
+   *   twist: how fast the phone is rolling around its own long axis (bottom
+   *         edge to top edge), like turning a doorknob, in degrees per second.
+   *         Positive = rolling clockwise as seen from behind (the right edge dips).
    */
   /** @type {Set<(id: string, rates: import('./aim-math.js').AimRates, t: number, body: Body) => void>} */
   const motionListeners = new Set();
@@ -171,14 +174,16 @@ export function createAimTracker(settings = { ...DEFAULT_AIM_SETTINGS }) {
    *   it tells us how steeply the top edge points upwards.
    * - lift: the part of this reading that points up, minus gravity's share,
    *   is the extra push. It's 0 when the phone is still.
+   * - twist: straight from the gyroscope's spin around the phone's y axis.
    *
    * @returns {Body}
    */
-  function bodyOf(aimer, sample) {
+  function bodyOf(aimer, sample, toPhoneAxes) {
     const tilt = (Math.asin(Math.max(-1, Math.min(1, aimer.up.y))) * 180) / Math.PI;
-    if (sample.gx === undefined) return { tilt, lift: 0 };
+    const twist = toPhoneAxes(sample).y;
+    if (sample.gx === undefined) return { tilt, lift: 0, twist };
     const along = sample.gx * aimer.up.x + sample.gy * aimer.up.y + sample.gz * aimer.up.z;
-    return { tilt, lift: along - GRAVITY };
+    return { tilt, lift: along - GRAVITY, twist };
   }
 
   return {

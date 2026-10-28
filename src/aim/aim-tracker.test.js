@@ -181,4 +181,16 @@ describe('createAimTracker', () => {
     expect(bodies[0].lift).toBeCloseTo(0);
     expect(bodies[1].lift).toBeCloseTo(5);
   });
+
+  it('reports the phone twisting around its long axis', () => {
+    const tracker = exact();
+    const twists = [];
+    tracker.onMotion((id, rates, t, body) => twists.push(body.twist));
+    // In xyz order, beta is the spin around y, the phone's long axis.
+    for (const t of [0, 10, 20]) {
+      tracker.push('p1', { alpha: 0, beta: 300, gamma: 0, gx: 0, gy: 0, gz: 9.8, t });
+    }
+    tracker.update(0, ASPECT);
+    expect(twists).toEqual([300, 300]);
+  });
 });

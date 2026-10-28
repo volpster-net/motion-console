@@ -11,9 +11,9 @@ gyroscope becomes a pointer, with buttons.
   <img src="docs/controller.png" alt="Controller page on a phone with a sensor readout, Re-center button and a large Fire button" width="150" />
 </p>
 
-**Status: Milestone 6.** After pairing, the console shows a **launcher menu**: point at a game and
-pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Three games
-so far: **Home Run Derby** (swing your phone like a bat against a real pitcher's repertoire), **Target Practice** (hit rings before they vanish) and **Hoops** (hold Fire,
+**Status: Milestone 7.** After pairing, the console shows a **launcher menu**: point at a game and
+pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Four games
+so far: **Bowling** (swing underhand and let go to roll; twist your wrist to hook it), **Home Run Derby** (swing your phone like a bat against a real pitcher's repertoire), **Target Practice** (hit rings before they vanish) and **Hoops** (hold Fire,
 swing, and let go to shoot baskets, Wii Sports Resort style). New games plug into the menu by adding a folder.
 
 ## How it works
@@ -360,12 +360,50 @@ repertoire (`pitchTypes`: how often, how fast, how much break), the timing windo
 `windowMs`), `timing.biasMs` if swings consistently register early or late, exit speeds and launch
 angles, air drag, and the fence in feet. The hit physics and the swing detector are unit-tested.
 
+### Bowling
+
+A full 10-frame game of ten-pin bowling on a 3D lane (three.js), with real scoring: strikes,
+spares, and the 10th frame's bonus balls.
+
+- **Line up** by pointing left or right: the ball slides along the foul line, with a guide line
+  down the lane.
+- **Roll**: **hold Fire** to pick up the ball (your position locks), **swing your arm back and
+  forward underhand**, and **let go of Fire**. How fast the phone tips forward as you let go sets
+  the ball's speed (about 10 to 21 mph). Letting go without a swing puts the ball back down.
+- **Aim** comes from the swing itself: if your arm drifts left or right as you let go, the ball
+  goes off at a small angle.
+- **Hook**: twist your wrist like a doorknob as you let go. Clockwise hooks right, anticlockwise
+  hooks left. Like a real oiled lane, the ball skids straight for the first 12 m and only curves
+  on the dry wood near the pins.
+- The camera chases the ball and settles on the pins. Callouts name strikes, doubles, turkeys,
+  spares, splits, and gutter balls; the phone buzzes on release, on impact, and for a strike.
+  Phones without a gyroscope get a charge meter instead.
+
+How the throw is read ([`throw.js`](src/games/bowling/throw.js)): while Fire is held, the game
+keeps the phone's forward tip speed, left/right turn speed, and wrist twist (a new `twist` on the
+aim tracker's motion `body`). On release it takes the fastest forward swing in the last quarter
+second, and averages the turn and twist just before letting go, ignoring small amounts so a plain
+release rolls straight. It keeps recording until the release is read on the next frame, so the
+last samples before letting go are never dropped.
+
+The pins ([`lane.js`](src/games/bowling/lane.js)) are a top-down 2D physics model: the ball and
+pins are circles that bump and swap momentum, pins hit hard enough fall and keep sliding into
+other pins, light touches only wobble a pin, and the kickback walls bounce pins back into the
+deck. That's enough for believable pocket strikes, splits, and messengers without a physics engine.
+
+**Tuning the feel.** `CONFIG.throw` in [`src/games/bowling/index.js`](src/games/bowling/index.js)
+sets the swing speeds for the slowest and fastest balls, the aim and twist deadzones, and how much
+each moves the ball; the readout in the bottom right shows each roll's speed, angle, and hook.
+`CONFIG.lane` holds the real lane dimensions and the pin physics (`knockSpeed`, `pinFriction`,
+`pinBounce` decide how easily pins carry; `hookAccel` and `oilLength` shape the hook). Scoring,
+the throw reader, and the lane physics are unit-tested.
+
 ### Shared by games
 
 `src/games/shared/` holds what games have in common: `synth.js` (Web Audio sound effects from
 tones and noise, no files) and `personal-best.js` (a best score per game in the browser). The aim
 tracker's `onMotion()` lets any game watch each motion sample (turn and tip speeds, tilt, and
-upward push), for gestures like a basketball shot or a bat swing.
+upward push, and wrist twist), for gestures like a basketball shot, a bat swing, or a hook ball.
 
 ## Project structure
 
@@ -415,6 +453,14 @@ src/
       pitcher.js            the pitcher's delivery
       batter.js             your batter's stance and swing (a turning chain, tested)
       render.js             canvas drawing: ballpark, people, ball, field map
+      sounds.js             sound effects
+    bowling/                Milestone 7: Bowling
+      meta.js               name, description, and tile art for the menu
+      index.js              CONFIG, screens, rolling, scorecard, and the game loop
+      lane.js               ball, hook, and pin physics, seen from above (pure, tested)
+      throw.js              reading speed, aim, and spin from the swing (pure, tested)
+      scoring.js            ten-pin scoring and the 10th frame (pure, tested)
+      render.js             three.js drawing: lane, pins, ball, camera
       sounds.js             sound effects
     basketball/             Milestone 5: Hoops
       meta.js               name, description, and tile art for the menu
@@ -511,6 +557,8 @@ Tuning: add `?hz=30` to a controller URL to change its send rate (10–60, defau
   crosshair and the phone can disagree about where "centre" is. The deadzone slows this down, and
   Re-center fixes it.
 - **Console reload reassigns slots.** Controllers reconnect automatically but may swap slot numbers.
+- **Bowling's swing reading is untested on real phones yet.** The swing, turn, and twist ranges
+  in `CONFIG.throw` are first guesses; the roll readout shows real values to tune from.
 - **Swing speeds vary by person.** Hoops' swing range is a starting guess; the power meter shows
   real swing speeds to tune it from.
 - **Swing timing leans on an assumed quickest trip** (`timing.quickestTripMs`, 30 ms). If swings

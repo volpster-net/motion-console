@@ -1,0 +1,297 @@
+/* The play area. Everything inside is positioned over the 3D canvas. */
+.bw {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+  background: #141826;
+  user-select: none;
+}
+
+.bw-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Scorecard across the top: ten frames and the total. */
+.bw-card-row {
+  position: absolute;
+  inset: 10px 12px auto;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr) 1.4fr 1.2fr;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.92);
+}
+
+.bw-frame {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  text-align: center;
+}
+
+.bw-frame:first-child {
+  border-left: 0;
+}
+
+.bw-frame small {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.bw-frame.is-current small {
+  background: var(--ink);
+  color: #fff;
+}
+
+.bw-marks {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bw-marks span {
+  width: 22px;
+  height: 22px;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 22px;
+}
+
+.bw-frame.is-tenth .bw-marks span:first-child {
+  border-left: 0;
+}
+
+.bw-frame b {
+  min-height: 28px;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bw-frame.is-total b {
+  font-size: 30px;
+  line-height: 50px;
+}
+
+/* A big word over the lane: Strike!, Spare!, 7 pins… */
+.bw-callout {
+  position: absolute;
+  inset: 34% 0 auto;
+  z-index: 1;
+  margin: 0;
+  text-align: center;
+  font-size: clamp(36px, 7vw, 88px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow:
+    0 3px 0 rgb(0 0 0 / 0.35),
+    0 0 24px rgb(0 0 0 / 0.4);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bw-callout.is-shown {
+  opacity: 1;
+  animation: bw-pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+.bw-callout.is-strike {
+  color: #ffd34d;
+}
+
+.bw-callout.is-spare {
+  color: #7fe0a0;
+}
+
+.bw-callout.is-miss,
+.bw-callout.is-hint {
+  color: #e6ebf1;
+}
+
+.bw-callout.is-hint {
+  font-size: clamp(20px, 3vw, 32px);
+}
+
+/* Bottom: which ball this is, and how the last one was rolled. */
+.bw-prompt,
+.bw-readout {
+  position: absolute;
+  bottom: 16px;
+  z-index: 1;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.88);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bw-prompt {
+  left: 16px;
+}
+
+.bw-readout {
+  right: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bw-readout:empty,
+.bw[data-phase='title'] .bw-prompt,
+.bw[data-phase='over'] .bw-prompt,
+.bw[data-phase='title'] .bw-readout {
+  display: none;
+}
+
+/* Title and game-over screens sit in the middle, over the lane. */
+.bw-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 110px 24px 24px;
+  text-align: center;
+  background: rgb(238 241 245 / 0.86);
+}
+
+.bw:not([data-phase='title']):not([data-phase='over']) .bw-screen {
+  display: none;
+}
+
+.bw[data-phase='title'] .bw-card-row {
+  visibility: hidden;
+}
+
+.bw-screen h1 {
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.bw-screen p {
+  max-width: 580px;
+  color: var(--muted);
+}
+
+.bw-rules b,
+.bw-hint b {
+  color: var(--ink);
+}
+
+.bw-cta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink) !important;
+  animation: bw-pulse 1.6s ease-in-out infinite;
+}
+
+.bw-player {
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--player);
+  color: #fff;
+  font-size: 16px;
+}
+
+.bw-hint {
+  font-size: 14px;
+}
+
+.bw-final {
+  font-size: clamp(64px, 10vw, 120px) !important;
+  line-height: 1;
+}
+
+.bw-best {
+  font-weight: 800;
+  color: var(--ok) !important;
+}
+
+.bw-results {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 8px 32px;
+  margin: 8px 0 0;
+}
+
+.bw-results dt {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.bw-results dd {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.bw-sound {
+  position: absolute;
+  left: 16px;
+  bottom: 64px;
+  z-index: 3;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .bw-marks span {
+    width: 16px;
+    height: 18px;
+    font-size: 11px;
+    line-height: 18px;
+  }
+
+  .bw-frame b {
+    font-size: 14px;
+  }
+}
+
+@keyframes bw-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes bw-pop {
+  from {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-cta,
+  .bw-callout.is-shown {
+    animation: none;
+  }
+}
