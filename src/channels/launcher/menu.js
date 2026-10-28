@@ -1,6 +1,6 @@
 /**
  * The launcher's menu screen: a tile per game. Players pick one by pointing
- * and pulling the trigger (see picker.js), or by clicking it.
+ * and pressing A (see picker.js), or by clicking it.
  */
 import { createAimDebugPanel } from '../../aim/index.js';
 import { createPicker } from './picker.js';
@@ -65,7 +65,7 @@ export function createMenu({ root, api, games, onPick }) {
   function updateHint() {
     const anyone = api.players.list().some((player) => player.slot !== null);
     hint.textContent = anyone
-      ? 'Point at a game and pull the trigger. During a game, press Home on your phone to pause.'
+      ? 'Point at a game and press A. During a game, press Home on your phone to pause.'
       : 'Scan the QR code with your phone to join, or click a game.';
     picker.measure(); // the hint's length can move the tiles
   }

@@ -307,7 +307,7 @@ export function createRenderer(canvas, config) {
 
   /**
    * The ball in your hands, at the bottom of the screen. It rests low until
-   * you grab it (hold Fire), lifts and glows while held, and is gone for a
+   * you grab it (hold A), lifts and glows while held, and is gone for a
    * moment after a throw (it's in the air).
    *
    * @param {'ready' | 'held' | 'thrown'} stage
@@ -335,7 +335,7 @@ export function createRenderer(canvas, config) {
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#ffffff';
     ctx.fillStyle = raised ? '#23b566' : '#6b7785';
-    const label = raised ? 'Swing up and let go!' : 'Hold Fire to grab the ball';
+    const label = raised ? 'Swing up and let go!' : 'Hold A to grab the ball';
     const labelY = y - r - size.height * 0.02;
     ctx.strokeText(label, x, labelY);
     ctx.fillText(label, x, labelY);

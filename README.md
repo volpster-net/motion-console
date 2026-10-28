@@ -8,12 +8,12 @@ gyroscope becomes a pointer, with buttons.
 
 <p>
   <img src="docs/console.png" alt="Console page showing the room QR code, the connected players, and live input data" width="640" />
-  <img src="docs/controller.png" alt="Controller page on a phone with a sensor readout, Re-center button and a large Fire button" width="150" />
+  <img src="docs/controller.png" alt="Controller page on a phone with a D-pad, A, B, X and Y buttons, and Re-center" width="150" />
 </p>
 
 **Status: Milestone 7.** After pairing, the console shows a **launcher menu**: point at a game and
-pull the trigger to play. **Home** on your phone pauses, with Resume or Quit to menu. Four games
-so far: **Bowling** (swing underhand and let go to roll; twist your wrist to hook it), **Home Run Derby** (swing your phone like a bat against a real pitcher's repertoire), **Target Practice** (hit rings before they vanish) and **Hoops** (hold Fire,
+press A to play. **Home** on your phone pauses, with Resume or Quit to menu. Four games
+so far: **Bowling** (swing underhand and let go to roll; twist your wrist to hook it), **Home Run Derby** (swing your phone like a bat against a real pitcher's repertoire), **Target Practice** (hit rings before they vanish) and **Hoops** (hold A,
 swing, and let go to shoot baskets, Wii Sports Resort style). New games plug into the menu by adding a folder.
 
 ## How it works
@@ -22,7 +22,7 @@ swing, and let go to shoot baskets, Wii Sports Resort style). New games plug int
 flowchart LR
   subgraph Phone["Phone · /controller/"]
     S[devicemotion rotation rate] -->|up to 60 Hz| T1[transport]
-    B[Fire / Re-center] --> T1
+    B[D-pad / A B X Y / Re-center] --> T1
   end
   subgraph Supabase["Supabase Realtime · room:ABCD"]
     BC[(Broadcast)]
@@ -63,6 +63,7 @@ flowchart LR
 | **Integrate by the phone's timestamps**      | Messages cross the internet in uneven bursts. Each sample carries the time the phone measured it, and the console replays samples by those times, so network jitter doesn't change crosshair speed.                                                                                                                           |
 | **Rate-capped sending**                      | Phones fire `devicemotion` at 50–200+ Hz. Capping at 60 Hz keeps bandwidth and Supabase's message quota predictable; the timestamps mean skipped readings don't distort aiming.                                                                                                                                               |
 | **Re-centering on the console**              | Re-center snaps the crosshair to the middle in the aim tracker. The phone just reports the button, so every game gets the same behaviour for free.                                                                                                                                                                            |
+| **A games-controller layout**                | The phone is a D-pad plus X/Y/A/B in a diamond, with A as the main action. The page stays locked in portrait so a fast swing can't make the browser spin the buttons round mid-throw.                                                                                                                                         |
 | **DOM updates once per frame**               | Messages only update state. `requestAnimationFrame` writes to the DOM, so 60 messages a second never cause 60 layouts.                                                                                                                                                                                                        |
 | **`core/` has no DOM**                       | The protocol, IDs, and emitter are pure and unit-tested. So is the aiming maths in `src/aim/`.                                                                                                                                                                                                                                |
 
@@ -82,15 +83,15 @@ Every message is one envelope:
 }
 ```
 
-| `ch`           | `type`    | Direction                | `d`                                                     |
-| -------------- | --------- | ------------------------ | ------------------------------------------------------- |
-| `sys`          | `hello`   | controller → console     | `{}`                                                    |
-| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`                        |
-| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)                       |
-| `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, gx, gy, gz, t }`: see below      |
-| `input`        | `button`  | controller → console     | `{ id: 'fire' \| 'recenter' \| 'home', down: boolean }` |
-| `output`       | `vibrate` | console → one controller | `{ pattern }`, as for `navigator.vibrate()`, ≤ 1 s      |
-| `<channel id>` | anything  | either way               | defined by that channel                                 |
+| `ch`           | `type`    | Direction                | `d`                                                                                                       |
+| -------------- | --------- | ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `sys`          | `hello`   | controller → console     | `{}`                                                                                                      |
+| `sys`          | `welcome` | console → one controller | `{ slot: 1-4 \| null, channel }`                                                                          |
+| `sys`          | `channel` | console → all            | `{ id }` (active channel changed)                                                                         |
+| `input`        | `motion`  | controller → console     | `{ alpha, beta, gamma, gx, gy, gz, t }`: see below                                                        |
+| `input`        | `button`  | controller → console     | `{ id: 'a' \| 'recenter' \| 'home' \| 'up' \| 'down' \| 'left' \| 'right' \| 'a' \| 'b', down: boolean }` |
+| `output`       | `vibrate` | console → one controller | `{ pattern }`, as for `navigator.vibrate()`, ≤ 1 s                                                        |
+| `<channel id>` | anything  | either way               | defined by that channel                                                                                   |
 
 `alpha`, `beta`, and `gamma` are the phone's raw rotation rate in degrees per second
 ([`DeviceMotionEvent.rotationRate`](https://developer.mozilla.org/docs/Web/API/DeviceMotionEvent/rotationRate)).
@@ -151,7 +152,7 @@ export default {
     api.onInput(INPUT.MOTION, (sample, { player }) => tracker.push(player.id, sample));
     api.onInput(INPUT.BUTTON, ({ id, down }, { player }) => {
       if (id === BUTTONS.RECENTER && down) tracker.recenter(player.id);
-      if (id === BUTTONS.FIRE && down) {
+      if (id === BUTTONS.A && down) {
         /* check for a hit at tracker.get(player.id) */
       }
     });
@@ -222,13 +223,13 @@ shared aim tracker in `src/aim/` for anything that points.
 ### The launcher
 
 - One tile per game, plus a "More games" placeholder. Every player's crosshair shows on the
-  menu, and a tile lights up in the colour of whoever points at it. Fire starts it. You can also
+  menu, and a tile lights up in the colour of whoever points at it. A starts it. You can also
   click a tile on the console, which is handy without a phone.
 - **Home** on any phone, or **Esc** on the console, pauses the game: it freezes, and a pause
-  screen offers **Resume** or **Quit to menu**, picked by pointing and pulling the trigger. Home
+  screen offers **Resume** or **Quit to menu**, picked by pointing and pressing A. Home
   again also resumes. Resuming runs a 3-2-1 countdown so players can get their aim back.
 - The game also pauses by itself if a player's phone disconnects or the console tab is hidden.
-- While paused, the launcher stops phone input reaching the game, so the trigger on the pause
+- While paused, the launcher stops phone input reaching the game, so pressing A on the pause
   screen can't also fire in the game. Games without `pause()`/`resume()` quit straight to the menu
   on Home.
 - Each game gets its own copy of `controller`; when it stops, the launcher removes any
@@ -239,7 +240,7 @@ shared aim tracker in `src/aim/` for anything that points.
 
 ### Target Practice
 
-Title screen → 3-2-1 countdown → 60-second round → results → trigger to play again.
+Title screen → 3-2-1 countdown → 60-second round → results → A to play again.
 
 - Ring targets pop up at random, clear of the top bar, and vanish after about 2 seconds. Up to
   three are on screen at once.
@@ -269,21 +270,21 @@ pointing. Same flow as Target Practice: title → 3-2-1 → 60 seconds → resul
 
 - **Aim** by turning the phone left or right; the crosshair sits at rim height so you can line it
   up with the hoop.
-- **Throw the Wii Sports Resort way**: **hold Fire** to grab the ball (it lifts and glows on
-  screen, and your aim locks), **swing your arm up**, and **let go of Fire** to release. How fast
+- **Throw the Wii Sports Resort way**: **hold A** to grab the ball (it lifts and glows on
+  screen, and your aim locks), **swing your arm up**, and **let go of A** to release. How fast
   the phone was swinging up as you let go sets the power: every shot leaves at the same arc, so
   too soft falls short and too hard flies long. A tap with no swing is a limp toss.
 - A **power meter** shows each throw's swing speed against the sweet spot, so players can learn
-  it. Phones that send no motion data (no gyroscope) get a charge meter instead: hold Fire to
+  it. Phones that send no motion data (no gyroscope) get a charge meter instead: hold A to
   charge, let go to shoot.
 - The ball flies in 3D with gravity and bounces off the rim, backboard, and floor, so shots can
   swish, bank in, rattle in, or rim out. Shots still in the air at the buzzer count.
 - A basket is 2, a swish 3. Three makes in a row puts you **on fire**: ×2 until you miss. The
   hoop starts sliding side to side halfway through the round.
 
-How the throw is measured ([`toss.js`](src/games/basketball/toss.js)): while Fire is held, the
+How the throw is measured ([`toss.js`](src/games/basketball/toss.js)): while A is held, the
 game remembers the phone's upward swing speed (its tip-up rate from the gyroscope, however it's
-held). When Fire is let go, the fastest swing in the quarter-second before is the throw's
+held). When A is let go, the fastest swing in the quarter-second before is the throw's
 strength. The release is worked out one frame later, after every motion sample sent before it has
 arrived, so network timing can't cut the swing short.
 
@@ -365,13 +366,16 @@ angles, air drag, and the fence in feet. The hit physics and the swing detector 
 A full 10-frame game of ten-pin bowling on a 3D lane (three.js), with real scoring: strikes,
 spares, and the 10th frame's bonus balls.
 
-- **Line up** by pointing left or right: the ball slides along the foul line, with a guide line
-  down the lane.
-- **Roll**: **hold Fire** to pick up the ball (your position locks), **swing your arm back and
-  forward underhand**, and **let go of Fire**. How fast the phone tips forward as you let go sets
+- **Line up** with the phone's **D-pad**: left/right steps along the foul line a board at a time
+  (hold to keep stepping; the readout shows your board, 20 is the middle). Press **X** to switch
+  left/right to **angling** the shot (the guide line turns yellow and swings), and **X** again to
+  go back. Hold **up** to look down the lane at the pins; **B** resets to the middle, straight.
+  Your stance carries over to the next ball, so a good line can be repeated.
+- **Roll**: **hold A** to pick up the ball (your position locks), **swing your arm back and
+  forward underhand**, and **let go of A**. How fast the phone tips forward as you let go sets
   the ball's speed (about 10 to 21 mph). Letting go without a swing puts the ball back down.
-- **Aim** comes from the swing itself: if your arm drifts left or right as you let go, the ball
-  goes off at a small angle.
+- **Aim** is the angle you picked, plus whatever the swing adds: if your arm drifts left or right
+  as you let go, the ball goes off a little more that way.
 - **Hook**: twist your wrist like a doorknob as you let go. Clockwise hooks right, anticlockwise
   hooks left. Like a real oiled lane, the ball skids straight for the first 12 m and only curves
   on the dry wood near the pins.
@@ -379,7 +383,7 @@ spares, and the 10th frame's bonus balls.
   spares, splits, and gutter balls; the phone buzzes on release, on impact, and for a strike.
   Phones without a gyroscope get a charge meter instead.
 
-How the throw is read ([`throw.js`](src/games/bowling/throw.js)): while Fire is held, the game
+How the throw is read ([`throw.js`](src/games/bowling/throw.js)): while A is held, the game
 keeps the phone's forward tip speed, left/right turn speed, and wrist twist (a new `twist` on the
 aim tracker's motion `body`). On release it takes the fastest forward swing in the last quarter
 second, and averages the turn and twist just before letting go, ignoring small amounts so a plain

@@ -3,7 +3,7 @@
  *
  * It works like pointing a Wii Remote at a menu: every player gets a
  * crosshair over `area`, each frame we work out which choice (if any) sits
- * under each crosshair and highlight it, and when a player pulls the trigger
+ * under each crosshair and highlight it, and when a player presses A
  * the choice under their crosshair is picked. Choices can also be clicked.
  */
 import { createAimTracker, loadAimSettings, toPixels } from '../../aim/index.js';
@@ -103,7 +103,7 @@ export function createPicker({ area, choices, api, onPick }) {
     api.onInput(INPUT.BUTTON, ({ id, down }, { player }) => {
       if (!down || player.slot === null) return;
       if (id === BUTTONS.RECENTER) tracker.recenter(player.id);
-      if (id === BUTTONS.FIRE) {
+      if (id === BUTTONS.A) {
         const choice = choiceAt(toPixels(tracker.get(player.id), size));
         if (choice) {
           api.vibrate(player.id, 40);

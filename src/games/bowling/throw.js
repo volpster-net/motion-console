@@ -1,6 +1,6 @@
 /**
- * Reads a bowling throw from the phone: hold Fire to pick up the ball, swing
- * your arm back and then forward underhand, and let go of Fire to release.
+ * Reads a bowling throw from the phone: hold A to pick up the ball, swing
+ * your arm back and then forward underhand, and let go of A to release.
  *
  * Three things are measured in the moments before you let go:
  *

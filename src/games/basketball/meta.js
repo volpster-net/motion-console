@@ -7,7 +7,7 @@
 export default {
   id: 'basketball',
   name: 'Hoops',
-  description: 'Hold Fire, swing your arm up, and let go to shoot, just like Wii Sports Resort.',
+  description: 'Hold A, swing your arm up, and let go to shoot, just like Wii Sports Resort.',
   // Tile picture: a backboard, rim, and net, with a ball on its way in.
   art: `
     <svg viewBox="0 0 160 90" aria-hidden="true">

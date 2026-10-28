@@ -7,7 +7,7 @@
 export default {
   id: 'bowling',
   name: 'Bowling',
-  description: 'Hold Fire, swing underhand, and let go to roll. Twist your wrist to hook it.',
+  description: 'Hold A, swing underhand, and let go to roll. Twist your wrist to hook it.',
   // Tile picture: a lane running away to a rack of pins, with a ball on its way.
   art: `
     <svg viewBox="0 0 160 90" aria-hidden="true">

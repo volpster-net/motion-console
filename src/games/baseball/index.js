@@ -425,7 +425,7 @@ function createSession(container, controller) {
       </p>
       <p class="hr-cta">${
         player
-          ? `<span class="hr-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Pull the trigger to start`
+          ? `<span class="hr-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Press A to start`
           : 'Scan the QR code with your phone to join'
       }</p>
       <p class="hr-hint">Keep a firm grip on your phone when you swing!</p>`;
@@ -492,7 +492,7 @@ function createSession(container, controller) {
         <div><dt>Best (home runs)</dt><dd>${recordHomers}</dd></div>
         <div><dt>Best (longest)</dt><dd>${recordLongest ? `${recordLongest} ft` : '–'}</dd></div>
       </dl>
-      <p class="hr-cta">Pull the trigger to play again</p>`;
+      <p class="hr-cta">Press A to play again</p>`;
   }
 
   // ---- Swinging -----------------------------------------------------------
@@ -569,13 +569,13 @@ function createSession(container, controller) {
       }
     }),
     controller.onInput(INPUT.BUTTON, ({ id: button, down }, { player }) => {
-      if (paused || !down || button !== BUTTONS.FIRE || player.id !== activePlayer()?.id) return;
+      if (paused || !down || button !== BUTTONS.A || player.id !== activePlayer()?.id) return;
       const now = performance.now();
       if (phase.name === 'title') return startCountdown(now);
       if (phase.name === 'results' && now - phase.at >= CONFIG.round.resultsLockMs) {
         return startCountdown(now);
       }
-      // No gyroscope? Then Fire swings, timed by when the press arrived.
+      // No gyroscope? Then A swings, timed by when the press arrived.
       if (!clock.ready) {
         animateSwing();
         swingAt(now - CONFIG.timing.quickestTripMs, 0.5, player);

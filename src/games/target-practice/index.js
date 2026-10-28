@@ -1,5 +1,5 @@
 /**
- * Target Practice: aim with your phone, pull the trigger (Fire) to hit the
+ * Target Practice: aim with your phone, press A to hit the
  * rings before they vanish. 60-second rounds, streak multipliers, and a
  * personal best.
  *
@@ -259,7 +259,7 @@ function createSession(container, controller) {
       </p>
       <p class="tp-cta">${
         player
-          ? `<span class="tp-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Pull the trigger to start`
+          ? `<span class="tp-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Press A to start`
           : 'Scan the QR code with your phone to join'
       }</p>
       <p class="tp-hint">Point at the middle of the screen and press Re-center any time.</p>`;
@@ -301,7 +301,7 @@ function createSession(container, controller) {
         <div><dt>Bombs hit</dt><dd>${results.bombsHit}</dd></div>
         <div><dt>Personal best</dt><dd>${personalBest}</dd></div>
       </dl>
-      <p class="tp-cta">Pull the trigger to play again</p>`;
+      <p class="tp-cta">Press A to play again</p>`;
   }
 
   // ---- Input --------------------------------------------------------------
@@ -315,10 +315,10 @@ function createSession(container, controller) {
     controller.onInput(INPUT.BUTTON, ({ id: button, down }, { player }) => {
       if (!down || paused) return;
       if (button === BUTTONS.RECENTER) tracker.recenter(player.id);
-      if (button === BUTTONS.FIRE && player.id === activePlayer()?.id) pullTrigger(player);
+      if (button === BUTTONS.A && player.id === activePlayer()?.id) pullTrigger(player);
     }),
     controller.players.onChange(() => {
-      if (phase.name === 'title') showTitle(); // update "scan to join" / "pull the trigger"
+      if (phase.name === 'title') showTitle(); // update "scan to join" / "press A"
     }),
   );
 

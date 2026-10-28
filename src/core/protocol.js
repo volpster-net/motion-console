@@ -54,7 +54,7 @@ export const INPUT = Object.freeze({
    *                       Only differences between samples mean anything.
    */
   MOTION: 'motion',
-  /** d: { id: 'fire' | 'recenter' | 'home', down: boolean } — sent on both press and release. */
+  /** d: { id: 'a' | 'recenter' | 'home', down: boolean } — sent on both press and release. */
   BUTTON: 'button',
 });
 
@@ -85,11 +85,26 @@ export function parseVibration(pattern) {
   return /** @type {number | number[]} */ (pattern);
 }
 
+/**
+ * The phone's buttons, laid out like a classic games controller: a D-pad and
+ * four face buttons in a diamond (X top, Y left, A right, B bottom). A is the
+ * main action: pick, start, shoot, and hold-and-swing throws.
+ */
 export const BUTTONS = Object.freeze({
-  FIRE: 'fire',
   RECENTER: 'recenter',
   /** Back to the launcher menu, like the Wii Remote's Home button. */
   HOME: 'home',
+  /** The D-pad. Games that don't use it simply ignore these. */
+  UP: 'up',
+  DOWN: 'down',
+  LEFT: 'left',
+  RIGHT: 'right',
+  /** The main action button. */
+  A: 'a',
+  /** The other face buttons, for whatever a game wants: back, switch modes, and so on. */
+  B: 'b',
+  X: 'x',
+  Y: 'y',
 });
 
 /**

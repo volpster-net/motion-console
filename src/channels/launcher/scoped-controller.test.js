@@ -66,10 +66,10 @@ describe('createScopedController', () => {
     const heard = vi.fn();
     controller.onInput('button', heard);
     setMuted(true);
-    api.emit({ id: 'fire' });
+    api.emit({ id: 'a' });
     expect(heard).not.toHaveBeenCalled();
     setMuted(false);
-    api.emit({ id: 'fire' });
+    api.emit({ id: 'a' });
     expect(heard).toHaveBeenCalledTimes(1);
   });
 });

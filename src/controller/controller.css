@@ -114,39 +114,6 @@ body.controller {
   color: var(--muted);
 }
 
-.readout {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 0;
-  padding: 16px;
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  text-align: center;
-}
-
-.readout dt {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.readout dd {
-  margin: 4px 0 0;
-  font-family: var(--mono);
-  font-size: 18px;
-  white-space: pre;
-}
-
-.readout-caption {
-  grid-column: 1 / -1;
-  font-size: 12px;
-  color: var(--muted);
-}
-
 .sensor-warning {
   padding: 10px 12px;
   border-radius: 12px;
@@ -190,32 +157,137 @@ body.controller {
   box-shadow: 0 1px 0 var(--line);
 }
 
+/*
+ * The pad: a D-pad on top where the thumb rests, then Re-center, then four
+ * face buttons in a diamond, sized to fill the phone's screen.
+ */
+.controller-app {
+  --dir: min(19vw, 10dvh);
+  --key: min(22vw, 11.5dvh);
+}
+
+.pad-controls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: 12px;
+}
+
+.pad-btn.is-down {
+  transform: translateY(3px);
+}
+
+/* ---- D-pad ---- */
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, var(--dir));
+  grid-template-rows: repeat(3, var(--dir));
+  filter: drop-shadow(0 4px 0 var(--line));
+}
+
+.dpad .pad-btn,
+.dpad-hub {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: var(--ink);
+  color: #fff;
+}
+
+.dpad svg {
+  width: 45%;
+  height: 45%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dpad-up {
+  grid-area: 1 / 2;
+  border-radius: 10px 10px 0 0;
+}
+
+.dpad-left {
+  grid-area: 2 / 1;
+  border-radius: 10px 0 0 10px;
+}
+
+.dpad-hub {
+  grid-area: 2 / 2;
+}
+
+.dpad-right {
+  grid-area: 2 / 3;
+  border-radius: 0 10px 10px 0;
+}
+
+.dpad-down {
+  grid-area: 3 / 2;
+  border-radius: 0 0 10px 10px;
+}
+
+.dpad .pad-btn.is-down {
+  transform: none;
+  color: var(--player, var(--accent));
+  background: #2f3b4a;
+}
+
+/* ---- Face buttons: X top, Y left, A right, B bottom ---- */
+.face-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, var(--key));
+  grid-template-rows: repeat(3, var(--key));
+  margin: calc(var(--key) * -0.12);
+}
+
+.btn-face {
+  width: calc(var(--key) * 1.12);
+  height: calc(var(--key) * 1.12);
+  place-self: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: calc(var(--key) * 0.42);
+  box-shadow: 0 5px 0 rgb(0 0 0 / 0.25);
+}
+
+.btn-face.is-down {
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.25);
+}
+
+.btn-x {
+  grid-area: 1 / 2;
+  background: #2f6fde;
+}
+
+.btn-y {
+  grid-area: 2 / 1;
+  background: #2c9d5b;
+}
+
+.btn-a {
+  grid-area: 2 / 3;
+  background: var(--danger);
+}
+
+.btn-b {
+  grid-area: 3 / 2;
+  background: #e8a317;
+}
+
+/* ---- Re-center: a small pill between them ---- */
 .btn-recenter {
-  padding: 18px;
-  border-radius: 18px;
+  padding: 10px 18px;
+  border-radius: 999px;
   background: var(--surface);
-  font-size: 18px;
-  box-shadow: 0 5px 0 var(--line);
+  color: var(--ink);
+  font-size: 15px;
+  box-shadow: 0 3px 0 var(--line);
 }
 
 .btn-recenter.is-down {
-  transform: translateY(4px);
   box-shadow: 0 1px 0 var(--line);
-}
-
-.btn-fire {
-  flex: 1;
-  min-height: 180px;
-  margin-bottom: 8px;
-  border-radius: 32px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 40px;
-  letter-spacing: 0.06em;
-  box-shadow: 0 8px 0 #b3343a;
-}
-
-.btn-fire.is-down {
-  transform: translateY(6px);
-  box-shadow: 0 2px 0 #b3343a;
 }

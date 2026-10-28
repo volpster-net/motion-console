@@ -1,6 +1,6 @@
 /**
  * Hoops: an arcade basketball shootout. Aim left and right with your phone,
- * then throw the Wii Sports Resort way: hold Fire to grab the ball, swing
+ * then throw the Wii Sports Resort way: hold A to grab the ball, swing
  * your arm up, and let go to shoot. Make as many baskets as you can in 60 seconds.
  *
  * Files in this folder:
@@ -56,8 +56,8 @@ export const CONFIG = {
   },
 
   /**
-   * The throw, Wii Sports Resort style: hold Fire to grab the ball, swing
-   * your arm up, and let go of Fire to release. How fast the phone was
+   * The throw, Wii Sports Resort style: hold A to grab the ball, swing
+   * your arm up, and let go of A to release. How fast the phone was
    * swinging up as you let go sets the power (toss.js explains how).
    */
   toss: {
@@ -77,7 +77,7 @@ export const CONFIG = {
   },
 
   /**
-   * Holding Fire charges a meter that swings up and down; let go to shoot.
+   * Holding A charges a meter that swings up and down; let go to shoot.
    * 'auto' allows it only for phones that send no motion data (no gyroscope),
    * so everyone else has to make the shooting motion. 'always' or 'never' to override.
    */
@@ -285,7 +285,7 @@ function createSession(container, controller) {
   let lastShotAt = -Infinity;
   let hoopX = 0;
   let personalBest = best.load();
-  /** When the player started holding Fire to charge a shot, if they are. */
+  /** When the player started holding A to charge a shot, if they are. */
   let chargingSince = null;
 
   function freshStats() {
@@ -305,15 +305,15 @@ function createSession(container, controller) {
       <h1>${name}</h1>
       <p>${description}</p>
       <p class="bb-rules">
-        Point your phone to line up with the rim. <b>Hold Fire</b> to grab the ball,
-        <b>swing your arm up</b>, and <b>let go of Fire</b> to shoot. Swing harder to
+        Point your phone to line up with the rim. <b>Hold A</b> to grab the ball,
+        <b>swing your arm up</b>, and <b>let go of A</b> to shoot. Swing harder to
         shoot further.
         A basket is <b>${CONFIG.scoring.basket}</b>, a swish (nothing but net) is <b>${CONFIG.scoring.swish}</b>.
         Make <b>${CONFIG.scoring.onFireFrom}</b> in a row and you're on fire: <b>×${CONFIG.scoring.onFireMultiplier}</b>.
       </p>
       <p class="bb-cta">${
         player
-          ? `<span class="bb-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Pull the trigger to start`
+          ? `<span class="bb-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Press A to start`
           : 'Scan the QR code with your phone to join'
       }</p>
       <p class="bb-hint">Just like Wii Sports Resort: a smooth, medium swing is all it takes.</p>`;
@@ -364,7 +364,7 @@ function createSession(container, controller) {
         <div><dt>Best streak</dt><dd>${stats.bestStreak}</dd></div>
         <div><dt>Personal best</dt><dd>${personalBest}</dd></div>
       </dl>
-      <p class="bb-cta">Pull the trigger to play again</p>`;
+      <p class="bb-cta">Press A to play again</p>`;
   }
 
   // ---- Shooting -----------------------------------------------------------
@@ -464,10 +464,10 @@ function createSession(container, controller) {
   // ---- Throwing -----------------------------------------------------------
   // While the ball is held, remember how fast the phone swings upwards.
   const swing = createSwingMemory(CONFIG.toss);
-  /** When the active player grabbed the ball (holding Fire), if they have. */
+  /** When the active player grabbed the ball (holding A), if they have. */
   let holdingSince = null;
   /**
-   * Set when Fire is let go. The throw is worked out on the next frame,
+   * Set when A is let go. The throw is worked out on the next frame,
    * after the tracker has caught up on every motion sample that arrived
    * before the release.
    */
@@ -508,7 +508,7 @@ function createSession(container, controller) {
     );
   }
 
-  /** May this player use the hold-Fire charged shot? */
+  /** May this player use the hold-A charged shot? */
   function mayCharge(player) {
     if (CONFIG.charge.mode === 'always') return true;
     if (CONFIG.charge.mode === 'never') return false;
@@ -522,7 +522,7 @@ function createSession(container, controller) {
     controller.onInput(INPUT.BUTTON, ({ id: button, down }, { player }) => {
       if (paused) return;
       if (button === BUTTONS.RECENTER && down) tracker.recenter(player.id);
-      if (button === BUTTONS.FIRE && player.id === activePlayer()?.id) trigger(player, down);
+      if (button === BUTTONS.A && player.id === activePlayer()?.id) trigger(player, down);
     }),
     controller.players.onChange(() => {
       if (phase.name === 'title') showTitle();
@@ -589,7 +589,7 @@ function createSession(container, controller) {
       return;
     }
 
-    // Fire was let go since the last frame: throw, now that the swing is fully known.
+    // A was let go since the last frame: throw, now that the swing is fully known.
     if (pendingRelease) throwBall(now);
 
     const playing = phase.name === 'playing';

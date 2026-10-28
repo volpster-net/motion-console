@@ -63,25 +63,34 @@
           </button>
         </header>
 
-        <dl class="readout" aria-describedby="readout-caption">
-          <div>
-            <dt>Alpha</dt>
-            <dd id="alpha">–</dd>
-          </div>
-          <div>
-            <dt>Beta</dt>
-            <dd id="beta">–</dd>
-          </div>
-          <div>
-            <dt>Gamma</dt>
-            <dd id="gamma">–</dd>
-          </div>
-          <p id="readout-caption" class="readout-caption">Rotation rate, degrees per second</p>
-        </dl>
         <p id="sensor-warning" class="sensor-warning" hidden></p>
 
-        <button id="recenter-btn" class="pad-btn btn-recenter" type="button">Re-center</button>
-        <button id="fire-btn" class="pad-btn btn-fire" type="button">Fire</button>
+        <div class="pad-controls">
+          <div class="dpad" role="group" aria-label="D-pad">
+            <button id="up-btn" class="pad-btn dpad-up" type="button" aria-label="Up">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
+            </button>
+            <button id="left-btn" class="pad-btn dpad-left" type="button" aria-label="Left">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+            </button>
+            <span class="dpad-hub" aria-hidden="true"></span>
+            <button id="right-btn" class="pad-btn dpad-right" type="button" aria-label="Right">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+            <button id="down-btn" class="pad-btn dpad-down" type="button" aria-label="Down">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+          </div>
+          <div class="pad-middle">
+            <button id="recenter-btn" class="pad-btn btn-recenter" type="button">Re-center</button>
+          </div>
+          <div class="face-buttons" role="group" aria-label="Face buttons">
+            <button id="x-btn" class="pad-btn btn-face btn-x" type="button">X</button>
+            <button id="y-btn" class="pad-btn btn-face btn-y" type="button">Y</button>
+            <button id="a-btn" class="pad-btn btn-face btn-a" type="button">A</button>
+            <button id="b-btn" class="pad-btn btn-face btn-b" type="button">B</button>
+          </div>
+        </div>
       </section>
     </main>
     <script type="module" src="/src/controller/main.js"></script>

@@ -26,6 +26,7 @@ const COLORS = {
   pin: 0xfbfbf8,
   stripe: 0xd8262f,
   guide: 0xffffff,
+  guideAngling: 0xffc531,
 };
 
 /** A real pin's outline, from base to crown: [radius, height] in metres. */
@@ -95,8 +96,8 @@ export function createRenderer(canvas, config) {
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
   // A warm spotlight over the pins, like a real alley's pin lights.
-  const pinLight = new THREE.PointLight(0xfff0d8, 6, 6, 1.5);
-  pinLight.position.copy(at(0, 1.6, lane.headPinZ - 0.4));
+  const pinLight = new THREE.PointLight(0xfff0d8, 3, 6, 1.5);
+  pinLight.position.copy(at(0, 2.2, lane.headPinZ - 0.4));
   scene.add(pinLight);
 
   // ---- The lanes ----------------------------------------------------------
@@ -246,11 +247,19 @@ export function createRenderer(canvas, config) {
   scene.add(ball);
   let lastRolled = 0;
 
-  const guide = mesh(
-    new THREE.PlaneGeometry(0.03, 6),
-    new THREE.MeshBasicMaterial({ color: COLORS.guide, transparent: true, opacity: 0.35 }),
-  );
-  guide.rotation.x = -Math.PI / 2;
+  // The guide is a line from the ball, turned to the chosen angle: a group
+  // pivoting at the ball, holding a strip that runs ahead of it.
+  const guideLength = 10;
+  const guideMaterial = new THREE.MeshBasicMaterial({
+    color: COLORS.guide,
+    transparent: true,
+    opacity: 0.35,
+  });
+  const guide = new THREE.Group();
+  const guideStrip = mesh(new THREE.PlaneGeometry(0.03, guideLength), guideMaterial);
+  guideStrip.rotation.x = -Math.PI / 2;
+  guideStrip.position.set(0, 0, guideLength / 2);
+  guide.add(guideStrip);
   scene.add(guide);
 
   // ---- Camera -------------------------------------------------------------
@@ -270,7 +279,9 @@ export function createRenderer(canvas, config) {
    *   now: number,
    *   view: 'approach' | 'follow' | 'pins',
    *   holdX: number,                       where the ball is held across the foul line
-   *   holding: boolean,                    the player is gripping it (Fire held)
+   *   aimAngle: number,                    the chosen angle, degrees (positive = right)
+   *   adjusting: 'position' | 'angle',     what the D-pad changes: the guide glows while angling
+   *   holding: boolean,                    the player is gripping it (A held)
    *   showGuide: boolean,
    *   lane: import('./lane.js').Lane | null,  the ball in play, if any
    *   pins: import('./lane.js').Pin[],
@@ -310,7 +321,12 @@ export function createRenderer(canvas, config) {
     ballMaterial.color.set(state.ballColor);
 
     guide.visible = state.showGuide;
-    guide.position.copy(at(state.holdX, 0.003, 3));
+    guide.position.copy(at(state.holdX, 0.003, -0.2));
+    // Turning right in lane terms is towards three.js's negative x.
+    guide.rotation.y = (-state.aimAngle * Math.PI) / 180;
+    const angling = state.adjusting === 'angle';
+    guideMaterial.color.set(angling ? COLORS.guideAngling : COLORS.guide);
+    guideMaterial.opacity = angling ? 0.8 : 0.35;
 
     // Pins.
     const shown = new Set();

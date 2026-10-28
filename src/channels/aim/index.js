@@ -1,6 +1,6 @@
 /**
  * Aim: the Milestone 2 channel. Each player gets a crosshair that follows
- * their phone. Fire flashes at the crosshair, and Re-center snaps it back to
+ * their phone. A flashes at the crosshair, and Re-center snaps it back to
  * the middle. Press D on the console to open the tuning panel.
  *
  * All the aiming logic lives in src/aim. This file only wires messages into
@@ -33,7 +33,7 @@ export default {
       <header class="aim-head">
         <h1>Aim</h1>
         <p>
-          Point the top of your phone at the screen. <strong>Fire</strong> flashes,
+          Point the top of your phone at the screen. <strong>A</strong> flashes,
           <strong>Re-center</strong> snaps back to the middle. Press <kbd>D</kbd> to tune.
         </p>
       </header>
@@ -101,7 +101,7 @@ export default {
     api.onInput(INPUT.BUTTON, ({ id, down }, { player }) => {
       if (!down) return;
       if (id === BUTTONS.RECENTER) tracker.recenter(player.id);
-      if (id === BUTTONS.FIRE) flash(player);
+      if (id === BUTTONS.A) flash(player);
     });
 
     // Every frame: let the tracker catch up on queued samples, then move each crosshair.

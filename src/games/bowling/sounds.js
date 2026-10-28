@@ -21,6 +21,11 @@ export function createSounds({ volume }) {
     onChange: synth.onChange,
     close: synth.close,
 
+    /** Stepping along the foul line or turning the aim: a tiny tick. */
+    step() {
+      tone({ freq: 2200, type: 'sine', duration: 0.02, gain: 0.08 });
+    },
+
     /** Picking up the ball: a soft click. */
     grab() {
       tone({ freq: 1400, type: 'triangle', duration: 0.03, gain: 0.15 });

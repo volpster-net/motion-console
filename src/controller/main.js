@@ -5,7 +5,6 @@ import { playerColor, playerLabel } from '../core/players.js';
 import { BUTTONS, INPUT, NS, OUTPUT, parseVibration, SYS } from '../core/protocol.js';
 import { joinRoom } from '../core/transport.js';
 import { renderFatal } from '../ui/fatal.js';
-import { formatSigned } from '../ui/format.js';
 import { enterFullscreen, keepScreenAwake, vibrate } from './device.js';
 import { createMotionSensor } from './motion.js';
 import { startMotionStream } from './motion-stream.js';
@@ -109,7 +108,6 @@ async function connect(code, sensor, permission) {
   showScreen('pad');
   $('#pad-room').textContent = code;
   setStatus('connecting', 'Connecting…');
-  startReadout(sensor);
   reportSensorProblems(sensor, permission);
 
   let room;
@@ -172,22 +170,33 @@ function runSession(room, sensor) {
 
   startMotionStream({ onSample: sensor.onSample, send: room.send, hz: getSendHz() });
   // The console does the aiming; the phone only reports presses and buzzes.
-  bindButton($('#fire-btn'), BUTTONS.FIRE, room, { key: ' ', onDown: () => vibrate(30) });
   bindButton($('#recenter-btn'), BUTTONS.RECENTER, room, { key: 'r', onDown: () => vibrate(25) });
   bindButton($('#home-btn'), BUTTONS.HOME, room, { key: 'h', onDown: () => vibrate(25) });
+  // The D-pad and face buttons: a lighter tick, since they're pressed often. A, the
+  // main action, gets a firmer one. On a desktop, Space also presses A.
+  const tick = () => vibrate(12);
+  bindButton($('#up-btn'), BUTTONS.UP, room, { key: 'ArrowUp', onDown: tick });
+  bindButton($('#down-btn'), BUTTONS.DOWN, room, { key: 'ArrowDown', onDown: tick });
+  bindButton($('#left-btn'), BUTTONS.LEFT, room, { key: 'ArrowLeft', onDown: tick });
+  bindButton($('#right-btn'), BUTTONS.RIGHT, room, { key: 'ArrowRight', onDown: tick });
+  bindButton($('#a-btn'), BUTTONS.A, room, { key: ['a', ' '], onDown: () => vibrate(30) });
+  bindButton($('#b-btn'), BUTTONS.B, room, { key: 'b', onDown: tick });
+  bindButton($('#x-btn'), BUTTONS.X, room, { key: 'x', onDown: tick });
+  bindButton($('#y-btn'), BUTTONS.Y, room, { key: 'y', onDown: tick });
 }
 
 /**
  * Sends `button` messages on press and release. Pointer capture keeps a
- * press alive if the thumb slides off the button. A keyboard key is bound too,
+ * press alive if the thumb slides off the button. Keyboard keys are bound too,
  * for testing on a desktop.
  *
  * @param {HTMLElement} el
  * @param {string} id
  * @param {import('../core/transport.js').Room} room
- * @param {{ key: string, onDown?: () => void }} options
+ * @param {{ key: string | string[], onDown?: () => void }} options
  */
 function bindButton(el, id, room, { key, onDown }) {
+  const keys = [key].flat();
   let down = false;
   const set = (next) => {
     if (next === down) return;
@@ -206,26 +215,12 @@ function bindButton(el, id, room, { key, onDown }) {
   el.addEventListener('contextmenu', (event) => event.preventDefault());
 
   window.addEventListener('keydown', (event) => {
-    if (event.key !== key) return;
+    if (!keys.includes(event.key)) return;
     event.preventDefault();
     if (!event.repeat) set(true);
   });
-  window.addEventListener('keyup', (event) => event.key === key && set(false));
+  window.addEventListener('keyup', (event) => keys.includes(event.key) && set(false));
   window.addEventListener('blur', () => set(false));
-}
-
-/** Local readout of the raw rotation rate, updated once per frame. */
-function startReadout(sensor) {
-  const outputs = { alpha: $('#alpha'), beta: $('#beta'), gamma: $('#gamma') };
-  requestAnimationFrame(function frame() {
-    const sample = sensor.read();
-    if (sample) {
-      for (const [axis, el] of Object.entries(outputs)) {
-        el.textContent = formatSigned(sample[axis]);
-      }
-    }
-    requestAnimationFrame(frame);
-  });
 }
 
 async function reportSensorProblems(sensor, permission) {

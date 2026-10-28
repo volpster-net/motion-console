@@ -2,7 +2,7 @@
  * Launcher: the console's home screen.
  *
  * It shows a tile for every game in src/games/. Players point at a tile with
- * their phone and pull the trigger (Fire) to start it; on the console you can
+ * their phone and press A to start it; on the console you can
  * also click a tile. During a game, Home on any phone (or Esc on the console)
  * pauses it, with a choice to resume or quit to the menu.
  *

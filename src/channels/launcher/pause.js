@@ -1,6 +1,6 @@
 /**
  * The pause screen, drawn over a paused game: Resume or Quit to menu.
- * Players pick by pointing and pulling the trigger, like the menu.
+ * Players pick by pointing and pressing A, like the menu.
  *
  * Resuming doesn't drop you straight back in: a short 3-2-1 countdown
  * gives everyone a moment to get their aim back first.
@@ -42,7 +42,7 @@ export function createPauseOverlay({ container, api, gameName, reason, onResume,
           Quit to menu
         </button>
       </div>
-      <p class="launcher-pause-hint">Point and pull the trigger, or press Home again to resume.</p>
+      <p class="launcher-pause-hint">Point and press A, or press Home again to resume.</p>
     </div>
     <p class="launcher-count" hidden></p>`;
   container.append(overlay);

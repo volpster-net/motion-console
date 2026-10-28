@@ -1,7 +1,7 @@
 /**
  * Bowling: a full 10-frame game on a 3D lane. Point your phone left or right
- * to line up along the foul line, then hold Fire to pick up the ball, swing
- * your arm back and forward underhand, and let go of Fire to roll. Swing
+ * to line up along the foul line, then hold A to pick up the ball, swing
+ * your arm back and forward underhand, and let go of A to roll. Swing
  * faster for a faster ball; twist your wrist as you let go to hook it.
  *
  * Files in this folder:
@@ -84,11 +84,22 @@ export const CONFIG = {
     fullTwist: 450,
   },
 
-  /** Lining up: how far along the foul line (m) the ball moves per screen height of pointing. */
-  position: { gain: 0.9 },
+  /**
+   * Lining up with the D-pad: left/right steps along the foul line a board at
+   * a time (a lane is 39 boards), or turns the aim after pressing A. Holding
+   * a direction repeats.
+   */
+  stance: {
+    boardsPerStep: 1,
+    /** Degrees per step when angling, and the widest angle either side. */
+    angleStep: 0.25,
+    maxAngle: 4,
+    repeatDelayMs: 350,
+    repeatEveryMs: 70,
+  },
 
   /**
-   * Holding Fire charges a meter that swings up and down; let go to roll.
+   * Holding A charges a meter that swings up and down; let go to roll.
    * 'auto' allows it only for phones that send no motion data (no gyroscope),
    * so everyone else has to make the bowling motion. 'always' or 'never' to override.
    */
@@ -240,16 +251,23 @@ function createSession(container, controller) {
   /** Whether this roll's ball has crashed into the pins yet. */
   let crashed = false;
 
-  /** Where the ball is held along the foul line (m), following the phone… */
+  /** Where the ball is held along the foul line (m). Kept between balls, so a good line can be repeated. */
   let holdX = 0;
-  /** …until it's picked up, when it stays put through the swing. */
-  let lockedX = null;
-  /** When Fire was pressed to pick up the ball, if it's held. */
+  /** The angle chosen to roll at, in degrees (positive = right). Kept between balls too. */
+  let aimAngle = 0;
+  /** What the D-pad's left and right change: where you stand, or the angle. X switches. */
+  let adjusting = /** @type {'position' | 'angle'} */ ('position');
+  /** The D-pad direction held down (-1 left, 1 right), and when it next repeats. */
+  let heldDirection = null;
+  let nextRepeatAt = 0;
+  /** Holding up looks down the lane at the pins. */
+  let lookingAtPins = false;
+  /** When A was pressed to pick up the ball, if it's held. */
   let holdingSince = null;
   /** When the no-gyroscope charge meter started, if charging. */
   let chargingSince = null;
   /**
-   * Set when Fire is let go. The throw is read on the next frame, after the
+   * Set when A is let go. The throw is read on the next frame, after the
    * tracker has caught up on every motion sample from before the release.
    */
   let pendingRelease = false;
@@ -262,14 +280,15 @@ function createSession(container, controller) {
       <h1>${name}</h1>
       <p>${description}</p>
       <p class="bw-rules">
-        Point your phone left or right to <b>line up</b>. <b>Hold Fire</b> to pick up the ball,
-        <b>swing your arm back and forward</b> underhand, and <b>let go of Fire</b> to roll it.
+        Use the <b>D-pad</b> to step left or right; press <b>X</b> to switch to angling your
+        shot, and hold <b>up</b> to look at the pins. <b>Hold A</b> to pick up the ball,
+        <b>swing your arm back and forward</b> underhand, and <b>let go of A</b> to roll it.
         Swing faster for a faster ball. <b>Twist your wrist</b> like a doorknob as you let go to
         hook it: clockwise curves right, anticlockwise curves left.
       </p>
       <p class="bw-cta">${
         player
-          ? `<span class="bw-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Pull the trigger to start`
+          ? `<span class="bw-player" style="--player: ${playerColor(player.slot)}">${playerLabel(player.slot)}</span> Press A to start`
           : 'Scan the QR code with your phone to join'
       }</p>
       <p class="bw-hint">Aim for the pocket: just to the right of the head pin.${
@@ -282,7 +301,9 @@ function createSession(container, controller) {
     rolls = [];
     strikeStreak = 0;
     screen.innerHTML = '';
-    readout.textContent = '';
+    holdX = 0;
+    aimAngle = 0;
+    adjusting = 'position';
     setUpBall();
   }
 
@@ -294,16 +315,94 @@ function createSession(container, controller) {
     current = next;
     pins = next.freshRack ? rackPins(CONFIG.lane) : rackPins(CONFIG.lane, left);
     lane = null;
-    lockedX = null;
     holdingSince = null;
+    heldDirection = null;
     chargingSince = null;
     pendingRelease = false;
     phase = { name: 'aiming' };
     root.dataset.phase = 'aiming';
-    prompt.innerHTML = `<b>Frame ${next.frame + 1}</b> · Ball ${next.ball + 1}${
-      next.freshRack ? '' : ` · ${pins.length} pin${pins.length === 1 ? '' : 's'} left`
-    }`;
+    showPrompt();
+    showStance();
     drawCard();
+  }
+
+  /** Bottom left: which ball this is, and what the buttons do right now. */
+  function showPrompt() {
+    const pinsLeft = current.freshRack
+      ? ''
+      : ` · ${pins.length} pin${pins.length === 1 ? '' : 's'} left`;
+    const help =
+      adjusting === 'angle'
+        ? '<kbd>←</kbd><kbd>→</kbd> angle · <kbd>X</kbd> done'
+        : '<kbd>←</kbd><kbd>→</kbd> move · <kbd>X</kbd> angle · <kbd>↑</kbd> pins · <kbd>B</kbd> reset';
+    prompt.innerHTML = `<span><b>Frame ${current.frame + 1}</b> · Ball ${current.ball + 1}${pinsLeft}</span><small>${help}</small>`;
+    root.dataset.adjusting = adjusting;
+  }
+
+  /** Bottom right while lining up: which board you're on and your angle. */
+  function showStance() {
+    readout.textContent = `Board ${boardOf(holdX)} · ${describeAngle(aimAngle)}`;
+  }
+
+  /**
+   * Bowlers count boards from the right edge (for a right-hander), 1 to 39;
+   * the middle is board 20.
+   */
+  function boardOf(x) {
+    const board = CONFIG.lane.laneWidth / 39;
+    return Math.round((CONFIG.lane.laneWidth / 2 - x) / board + 0.5);
+  }
+
+  const describeAngle = (angleDeg) =>
+    Math.abs(angleDeg) < 0.05
+      ? 'straight'
+      : `${Math.abs(angleDeg).toFixed(1)}° ${angleDeg > 0 ? 'right' : 'left'}`;
+
+  /** One press of left or right: a board along the foul line, or a notch of angle. */
+  function nudge(direction) {
+    const { stance, lane: size } = CONFIG;
+    if (adjusting === 'position') {
+      const limit = size.laneWidth / 2 - size.ballRadius - 0.01;
+      const step = (size.laneWidth / 39) * stance.boardsPerStep;
+      holdX = Math.max(-limit, Math.min(limit, holdX + direction * step));
+    } else {
+      const angle = Math.round((aimAngle + direction * stance.angleStep) * 100) / 100;
+      aimAngle = Math.max(-stance.maxAngle, Math.min(stance.maxAngle, angle));
+    }
+    sounds.step();
+    showStance();
+  }
+
+  /** The D-pad and the X and B buttons, used while lining up. */
+  function press(button, down) {
+    if (phase.name !== 'aiming') return;
+    if (button === BUTTONS.UP) lookingAtPins = down;
+    // Everything else waits while the ball is in your hand.
+    if (holdingSince !== null || chargingSince !== null) return;
+    if (button === BUTTONS.LEFT || button === BUTTONS.RIGHT) {
+      const direction = button === BUTTONS.LEFT ? -1 : 1;
+      if (down) {
+        heldDirection = direction;
+        nextRepeatAt = clock + CONFIG.stance.repeatDelayMs;
+        nudge(direction);
+      } else if (heldDirection === direction) {
+        heldDirection = null;
+      }
+    }
+    if (!down) return;
+    if (button === BUTTONS.X) {
+      adjusting = adjusting === 'position' ? 'angle' : 'position';
+      sounds.step();
+      showPrompt();
+    }
+    if (button === BUTTONS.B) {
+      holdX = 0;
+      aimAngle = 0;
+      adjusting = 'position';
+      sounds.step();
+      showPrompt();
+      showStance();
+    }
   }
 
   function finish() {
@@ -330,7 +429,7 @@ function createSession(container, controller) {
         <div><dt>Spares</dt><dd>${spares}</dd></div>
         <div><dt>Personal best</dt><dd>${personalBest}</dd></div>
       </dl>
-      <p class="bw-cta">Pull the trigger to bowl again</p>`;
+      <p class="bw-cta">Press A to bowl again</p>`;
     drawCard();
   }
 
@@ -360,7 +459,7 @@ function createSession(container, controller) {
   // ---- Rolling ------------------------------------------------------------
   function grab(player) {
     holdingSince = clock;
-    lockedX = holdX;
+    heldDirection = null;
     memory.clear();
     sounds.grab();
     controller.vibrate(player.id, CONFIG.vibration.grab);
@@ -371,7 +470,6 @@ function createSession(container, controller) {
     pendingRelease = false;
     const measured = memory.read();
     if (measured.swing < CONFIG.throw.minSwing) {
-      lockedX = null;
       showCallout('Swing your arm forward as you let go!', 'hint');
       return;
     }
@@ -385,9 +483,11 @@ function createSession(container, controller) {
    */
   function roll(release) {
     const player = activePlayer();
-    const x = lockedX ?? holdX;
-    lockedX = x;
-    lane = rollBall({ ...release, x }, pins);
+    // The angle you chose, plus whatever sideways drift the swing added.
+    const rolled = { ...release, angleDeg: aimAngle + release.angleDeg };
+    lane = rollBall({ ...rolled, x: holdX }, pins);
+    heldDirection = null;
+    lookingAtPins = false;
     pins = lane.pins;
     phase = { name: 'rolling' };
     root.dataset.phase = 'rolling';
@@ -395,16 +495,13 @@ function createSession(container, controller) {
     crashed = false;
     sounds.release();
     if (player) controller.vibrate(player.id, CONFIG.vibration.release);
-    readout.textContent = describeRelease(release);
+    readout.textContent = describeRelease(rolled);
   }
 
   /** "16.8 mph · 1.2° left · hooks right", for tuning the feel. */
   function describeRelease({ speed, angleDeg, spin }) {
     const mph = (speed * 2.23694).toFixed(1);
-    const angle =
-      Math.abs(angleDeg) < 0.05
-        ? 'straight'
-        : `${Math.abs(angleDeg).toFixed(1)}° ${angleDeg > 0 ? 'right' : 'left'}`;
+    const angle = describeAngle(angleDeg);
     const hook =
       spin === 0
         ? 'no hook'
@@ -497,8 +594,9 @@ function createSession(container, controller) {
     }),
     controller.onInput(INPUT.BUTTON, ({ id: button, down }, { player }) => {
       if (paused) return;
-      if (button === BUTTONS.RECENTER && down) tracker.recenter(player.id);
-      if (button === BUTTONS.FIRE && player.id === activePlayer()?.id) trigger(player, down);
+      if (player.id !== activePlayer()?.id) return;
+      if (button === BUTTONS.A) trigger(player, down);
+      else press(button, down);
     }),
     controller.players.onChange(() => {
       if (phase.name === 'title') showTitle();
@@ -515,7 +613,7 @@ function createSession(container, controller) {
     if (mayCharge(player)) {
       if (down) {
         chargingSince = clock;
-        lockedX = holdX;
+        heldDirection = null;
       } else if (chargingSince !== null) {
         const norm = chargeAt();
         chargingSince = null;
@@ -536,7 +634,7 @@ function createSession(container, controller) {
     }
   }
 
-  /** May this player use the hold-Fire charged roll? */
+  /** May this player use the hold-A charged roll? */
   function mayCharge(player) {
     if (CONFIG.charge.mode === 'always') return true;
     if (CONFIG.charge.mode === 'never') return false;
@@ -570,11 +668,10 @@ function createSession(container, controller) {
   cleanups.push(() => cancelAnimationFrame(frameRequest));
 
   function advance(dt) {
-    const player = activePlayer();
-    if (phase.name === 'aiming' && player && lockedX === null) {
-      const limit = CONFIG.lane.laneWidth / 2 - CONFIG.lane.ballRadius - 0.01;
-      const aim = tracker.get(player.id);
-      holdX = Math.max(-limit, Math.min(limit, aim.x * CONFIG.position.gain));
+    // Holding left or right keeps stepping.
+    if (phase.name === 'aiming' && heldDirection !== null && clock >= nextRepeatAt) {
+      nextRepeatAt = clock + CONFIG.stance.repeatEveryMs;
+      nudge(heldDirection);
     }
 
     if (pendingRelease) throwFromSwing();
@@ -599,12 +696,16 @@ function createSession(container, controller) {
     renderer.draw({
       now,
       view:
-        phase.name === 'result' || (phase.name === 'rolling' && ballNearPins)
+        phase.name === 'result' ||
+        (phase.name === 'rolling' && ballNearPins) ||
+        (aiming && lookingAtPins)
           ? 'pins'
           : phase.name === 'rolling'
             ? 'follow'
             : 'approach',
-      holdX: lockedX ?? holdX,
+      holdX,
+      aimAngle,
+      adjusting,
       holding: holdingSince !== null || chargingSince !== null,
       showGuide: aiming,
       lane: phase.name === 'rolling' || phase.name === 'result' ? lane : null,
@@ -626,10 +727,9 @@ function createSession(container, controller) {
     resume() {
       if (!paused) return;
       // A swing interrupted by the pause doesn't count.
-      if (holdingSince !== null) {
-        holdingSince = null;
-        lockedX = null;
-      }
+      holdingSince = null;
+      heldDirection = null;
+      lookingAtPins = false;
       pendingRelease = false;
       memory.clear();
       lastFrameAt = null;

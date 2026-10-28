@@ -21,9 +21,16 @@ const LOG_LIMIT = 12;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const BUTTON_LABELS = {
-  [BUTTONS.FIRE]: 'Fire',
   [BUTTONS.RECENTER]: 'Re-center',
   [BUTTONS.HOME]: 'Home',
+  [BUTTONS.UP]: '↑',
+  [BUTTONS.DOWN]: '↓',
+  [BUTTONS.LEFT]: '←',
+  [BUTTONS.RIGHT]: '→',
+  [BUTTONS.A]: 'A',
+  [BUTTONS.B]: 'B',
+  [BUTTONS.X]: 'X',
+  [BUTTONS.Y]: 'Y',
 };
 
 /** @param {import('../../console/players.js').Player} player */

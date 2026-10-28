@@ -5,7 +5,7 @@
  * can't keep reacting to phones after it's gone.
  *
  * While the game is paused, `setMuted(true)` stops phone input reaching it,
- * so pulling the trigger on the pause screen can't also fire in the game.
+ * so pressing A on the pause screen can't also fire in the game.
  *
  * @param {import('../../console/channel-host.js').ChannelApi} api  the launcher's own channel API
  * @returns {{
