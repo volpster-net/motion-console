@@ -38,7 +38,7 @@ const material = (color, roughness = 0.6, extra = {}) =>
  *
  * @param {{ bat?: boolean, helmet?: boolean, glove?: boolean, cap?: boolean }} kit
  */
-function createPlayer(kit) {
+export function createPlayer(kit) {
   const root = new THREE.Group();
   const shirt = material(0x1f9bf0, 0.65);
   const capColor = material(0x1f9bf0, kit.helmet ? 0.2 : 0.45);

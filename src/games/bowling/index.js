@@ -9,7 +9,9 @@
  *   lane.js     the ball and pins seen from above: physics, hooks, pins knocking pins (tested)
  *   throw.js    reading speed, aim, and spin from the swing (tested)
  *   scoring.js  ten-pin scoring: strikes, spares, the 10th frame (tested)
+ *   bowler.js   the bowler's body on the approach, swinging with the phone (tested)
  *   render.js   drawing the alley in 3D with three.js
+ *   clips.js    the big-screen cartoon clips for strikes, spares, and turkeys
  *   sounds.js   sound effects, made with the shared synthesizer
  */
 import './bowling.css';
@@ -17,6 +19,8 @@ import { createAimTracker, loadAimSettings } from '../../aim/index.js';
 import { playerColor, playerLabel } from '../../core/players.js';
 import { BUTTONS, INPUT } from '../../core/protocol.js';
 import { createPersonalBest } from '../shared/personal-best.js';
+import { STANCE_ARM, bowlerPose } from './bowler.js';
+import { createClipScreen } from './clips.js';
 import { isSplit, laneSettled, rackPins, rollBall, standingPins, stepLane } from './lane.js';
 import meta from './meta.js';
 import { createRenderer } from './render.js';
@@ -98,6 +102,16 @@ export const CONFIG = {
     repeatEveryMs: 70,
   },
 
+  /** The bowler on screen (bowler.js). */
+  bowler: {
+    /** Holding A walks the four-step approach, taking this long to reach the slide. */
+    approachMs: 1400,
+    /** After letting go, the arm carries on up to here… */
+    followThroughDeg: 150,
+    /** …easing in over about this long. */
+    followThroughMs: 160,
+  },
+
   /**
    * Holding A charges a meter that swings up and down; let go to roll.
    * 'auto' allows it only for phones that send no motion data (no gyroscope),
@@ -113,6 +127,8 @@ export const CONFIG = {
     maxRollS: 9,
     /** Ignore the trigger this long after the game ends. */
     gameOverLockMs: 1500,
+    /** A short beat after a big-screen clip ends, before the next ball. */
+    afterClipMs: 250,
     /** How often a slice of rolling rumble plays. */
     rumbleEveryMs: 110,
   },
@@ -126,6 +142,9 @@ export const CONFIG = {
   },
 
   sound: { volume: 0.45 },
+
+  /** The big-screen cartoon clips (clips.js) for strikes, spares, and turkeys. */
+  clips: { enabled: true },
 };
 
 // The name and description live in meta.js, so the launcher can show them
@@ -175,6 +194,7 @@ function createSession(container, controller) {
     <div class="bw card">
       <canvas class="bw-canvas"></canvas>
       <header class="bw-card-row" aria-label="Scorecard"></header>
+      <canvas class="bw-clip" hidden></canvas>
       <p class="bw-callout" aria-live="polite"></p>
       <p class="bw-prompt"></p>
       <p class="bw-readout"></p>
@@ -195,6 +215,10 @@ function createSession(container, controller) {
   const sounds = createSounds(CONFIG.sound);
   const best = createPersonalBest(id);
   const memory = createThrowMemory(CONFIG.throw);
+  const clips = createClipScreen(
+    /** @type {HTMLCanvasElement} */ (root.querySelector('.bw-clip')),
+    (sound) => sounds[sound]?.(),
+  );
   const cleanups = [() => renderer.destroy()];
 
   // ---- Layout -------------------------------------------------------------
@@ -262,6 +286,15 @@ function createSession(container, controller) {
   let nextRepeatAt = 0;
   /** Holding up looks down the lane at the pins. */
   let lookingAtPins = false;
+  /** When the bowler set off on the approach (A pressed), if they have. */
+  let walkStartedAt = null;
+  /**
+   * The bowling arm's angle (bowler.js), following the phone: every motion
+   * sample while A is held turns it by however far the phone tipped.
+   */
+  let armDeg = STANCE_ARM;
+  /** The phone's timestamp of the last sample that moved the arm. */
+  let lastArmT = null;
   /** When A was pressed to pick up the ball, if it's held. */
   let holdingSince = null;
   /** When the no-gyroscope charge meter started, if charging. */
@@ -315,8 +348,10 @@ function createSession(container, controller) {
     current = next;
     pins = next.freshRack ? rackPins(CONFIG.lane) : rackPins(CONFIG.lane, left);
     lane = null;
+    clips.stop();
     holdingSince = null;
     heldDirection = null;
+    resetBowler();
     chargingSince = null;
     pendingRelease = false;
     phase = { name: 'aiming' };
@@ -459,6 +494,9 @@ function createSession(container, controller) {
   // ---- Rolling ------------------------------------------------------------
   function grab(player) {
     holdingSince = clock;
+    walkStartedAt = clock;
+    armDeg = STANCE_ARM;
+    lastArmT = null;
     heldDirection = null;
     memory.clear();
     sounds.grab();
@@ -470,6 +508,7 @@ function createSession(container, controller) {
     pendingRelease = false;
     const measured = memory.read();
     if (measured.swing < CONFIG.throw.minSwing) {
+      resetBowler();
       showCallout('Swing your arm forward as you let go!', 'hint');
       return;
     }
@@ -486,6 +525,9 @@ function createSession(container, controller) {
     // The angle you chose, plus whatever sideways drift the swing added.
     const rolled = { ...release, angleDeg: aimAngle + release.angleDeg };
     lane = rollBall({ ...rolled, x: holdX }, pins);
+    // It leaves from the bowler's hand: at the foul line after the full approach, further back
+    // if they let go early.
+    lane.ball.z = Math.min(0, currentPose().rHand[2]);
     heldDirection = null;
     lookingAtPins = false;
     pins = lane.pins;
@@ -537,17 +579,20 @@ function createSession(container, controller) {
     let waitMs = CONFIG.timing.resultMs;
     if (fresh && left.length === 0) {
       strikeStreak += 1;
-      showCallout(
-        strikeStreak >= 4 ? `${strikeStreak} in a row!` : (STRIKE_NAMES[strikeStreak] ?? 'Strike!'),
-        'strike',
-      );
+      const turkey = strikeStreak === 3;
+      waitMs = Math.max(CONFIG.timing.strikeResultMs, playClip(turkey ? 'turkey' : 'strike'));
+      // The clip says "Strike!" or "Turkey!" itself; a double or a longer run gets its name below it.
+      const streakName =
+        strikeStreak >= 4 ? `${strikeStreak} in a row!` : STRIKE_NAMES[strikeStreak];
+      if (!CONFIG.clips.enabled || (streakName && !turkey))
+        showCallout(streakName ?? 'Strike!', 'strike');
       sounds.strike(strikeStreak);
       if (player) controller.vibrate(player.id, CONFIG.vibration.strike);
-      waitMs = CONFIG.timing.strikeResultMs;
     } else {
       strikeStreak = 0;
       if (left.length === 0) {
-        showCallout('Spare!', 'spare');
+        waitMs = Math.max(waitMs, playClip('spare'));
+        if (!CONFIG.clips.enabled) showCallout('Spare!', 'spare');
         sounds.spare();
         if (player) controller.vibrate(player.id, CONFIG.vibration.spare);
       } else if (down === 0) {
@@ -562,6 +607,12 @@ function createSession(container, controller) {
     phase = { name: 'result', at: clock, waitMs };
     root.dataset.phase = 'result';
     drawCard();
+  }
+
+  /** Starts a big-screen clip, if they're on, and says how long to wait for it (ms). */
+  function playClip(kind) {
+    if (!CONFIG.clips.enabled) return 0;
+    return clips.play(kind, clock) + CONFIG.timing.afterClipMs;
   }
 
   let calloutTimer = null;
@@ -587,6 +638,10 @@ function createSession(container, controller) {
       const recording = holdingSince !== null || pendingRelease;
       if (recording && playerId === activePlayer()?.id) {
         memory.add({ t, swing: rates.pitch, turn: rates.yaw, twist: body.twist });
+        // The bowler's arm tips as the phone tips (positive = swinging forward).
+        const gap = lastArmT === null ? 0 : t - lastArmT;
+        if (gap > 0 && gap < 100) armDeg = clampArm(armDeg + (rates.pitch * gap) / 1000);
+        lastArmT = t;
       }
     }),
     controller.onInput(INPUT.MOTION, (sample, { player }) => {
@@ -613,6 +668,7 @@ function createSession(container, controller) {
     if (mayCharge(player)) {
       if (down) {
         chargingSince = clock;
+        walkStartedAt = clock;
         heldDirection = null;
       } else if (chargingSince !== null) {
         const norm = chargeAt();
@@ -667,7 +723,30 @@ function createSession(container, controller) {
   });
   cleanups.push(() => cancelAnimationFrame(frameRequest));
 
+  /** The bowler back at the stance, cradling the ball. */
+  function resetBowler() {
+    walkStartedAt = null;
+    armDeg = STANCE_ARM;
+    lastArmT = null;
+  }
+
+  const clampArm = (deg) => Math.max(-110, Math.min(170, deg));
+
+  /** Every joint of the bowler right now. */
+  function currentPose() {
+    const walk = walkStartedAt === null ? 0 : (clock - walkStartedAt) / CONFIG.bowler.approachMs;
+    return bowlerPose({ x: holdX, walk, armDeg, holding: walkStartedAt !== null });
+  }
+
   function advance(dt) {
+    // No gyroscope: the arm swings with the charge meter instead.
+    if (chargingSince !== null) armDeg = -60 + 170 * chargeAt();
+    // After letting go, the arm sweeps on up into the follow-through.
+    if (phase.name === 'rolling' || phase.name === 'result') {
+      const ease = 1 - Math.exp(-dt / CONFIG.bowler.followThroughMs);
+      armDeg += (CONFIG.bowler.followThroughDeg - armDeg) * ease;
+    }
+
     // Holding left or right keeps stepping.
     if (phase.name === 'aiming' && heldDirection !== null && clock >= nextRepeatAt) {
       nextRepeatAt = clock + CONFIG.stance.repeatEveryMs;
@@ -712,7 +791,9 @@ function createSession(container, controller) {
       pins,
       pinTime: lane?.time ?? 0,
       ballColor: player ? playerColor(player.slot) : '#6c3bd1',
+      bowler: currentPose(),
     });
+    clips.update(clock);
     if (chargingSince !== null) readout.textContent = `Power ${Math.round(chargeAt() * 100)}%`;
   }
 
@@ -727,6 +808,7 @@ function createSession(container, controller) {
     resume() {
       if (!paused) return;
       // A swing interrupted by the pause doesn't count.
+      if (holdingSince !== null) resetBowler();
       holdingSince = null;
       heldDirection = null;
       lookingAtPins = false;

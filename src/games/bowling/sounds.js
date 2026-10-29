@@ -117,6 +117,44 @@ export function createSounds({ volume }) {
       tone({ freq: 392, endFreq: 260, type: 'sawtooth', duration: 0.5, gain: 0.15, delay: 0.1 });
     },
 
+    // ---- For the big-screen clips (clips.js) ----
+
+    /** A rocket taking off, or a ball barrelling past: a rising rush. */
+    whoosh() {
+      tone({ freq: 140, endFreq: 900, type: 'sawtooth', duration: 0.6, gain: 0.08 });
+      noise({ duration: 0.6, gain: 0.3, cutoff: 1800, filter: 'bandpass', resonance: 0.8 });
+    },
+
+    /** A firework bursting. */
+    pop() {
+      noise({ duration: 0.35, gain: 0.5, cutoff: 900 });
+      tone({ freq: 1200, endFreq: 300, type: 'square', duration: 0.12, gain: 0.12 });
+    },
+
+    /** A broom swish. */
+    sweep() {
+      noise({ duration: 0.25, gain: 0.25, cutoff: 3000, filter: 'highpass' });
+    },
+
+    /** Two hands slapping together. */
+    clap() {
+      noise({ duration: 0.08, gain: 0.6, cutoff: 1500, filter: 'bandpass', resonance: 1.5 });
+    },
+
+    /** Gobble gobble: a quick warble. */
+    gobble() {
+      for (let i = 0; i < 7; i++) {
+        tone({
+          freq: i % 2 ? 360 : 520,
+          endFreq: i % 2 ? 300 : 440,
+          type: 'square',
+          duration: 0.06,
+          gain: 0.14,
+          delay: i * 0.065,
+        });
+      }
+    },
+
     /** End of the game. */
     finish() {
       [NOTE.G5, NOTE.E5, NOTE.C5].forEach((freq, i) =>

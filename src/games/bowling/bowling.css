@@ -85,6 +85,35 @@
   line-height: 50px;
 }
 
+/* The alley's big screen: a cartoon clip for a strike, spare, or turkey (clips.js). */
+.bw-clip {
+  position: absolute;
+  top: 92px;
+  left: 50%;
+  z-index: 1;
+  width: min(64%, 720px, (100% - 220px) * 16 / 9);
+  aspect-ratio: 16 / 9;
+  border: 6px solid #1b1f2e;
+  border-radius: 14px;
+  background: #1b1f2e;
+  box-shadow:
+    0 0 0 2px #3a4160,
+    0 18px 40px rgb(0 0 0 / 0.45);
+  transform: translateX(-50%);
+  animation: bw-screen-on 0.25s ease-out;
+  pointer-events: none;
+}
+
+.bw-clip[hidden] {
+  display: none;
+}
+
+/* A double, or a longer run, is named under the clip. */
+.bw:has(.bw-clip:not([hidden])) .bw-callout {
+  inset: auto 0 96px;
+  font-size: clamp(28px, 4.5vw, 56px);
+}
+
 /* A big word over the lane: Strike!, Spare!, 7 pins… */
 .bw-callout {
   position: absolute;
@@ -309,6 +338,13 @@
   }
 }
 
+@keyframes bw-screen-on {
+  from {
+    transform: translateX(-50%) scale(0.9, 0.02);
+    opacity: 0.4;
+  }
+}
+
 @keyframes bw-pop {
   from {
     transform: scale(1.6);
@@ -318,7 +354,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .bw-cta,
-  .bw-callout.is-shown {
+  .bw-callout.is-shown,
+  .bw-clip {
     animation: none;
   }
 }

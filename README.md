@@ -379,9 +379,21 @@ spares, and the 10th frame's bonus balls.
 - **Hook**: twist your wrist like a doorknob as you let go. Clockwise hooks right, anticlockwise
   hooks left. Like a real oiled lane, the ball skids straight for the first 12 m and only curves
   on the dry wood near the pins.
-- The camera chases the ball and settles on the pins. Callouts name strikes, doubles, turkeys,
+- **Your bowler** (Home Run Derby's cartoon player, in your colour) stands behind the foul line
+  cradling the ball. Hold A and they walk a four-step approach into a slide, and their bowling arm
+  **follows your real arm**: the phone's forward/back tip speed is added up into the arm's angle,
+  so your backswing is their backswing. The ball leaves from their hand, wherever it is when you
+  let go, and the arm sweeps on into a follow-through.
+- The camera watches from straight behind the bowler, looking down the lane through a long lens
+  (far back and zoomed in, so the pins look close without shrinking the bowler), then widens out and chases the
+  ball (passing over the bowler's head) and settles on the pins. Callouts name strikes, doubles, turkeys,
   spares, splits, and gutter balls; the phone buzzes on release, on impact, and for a strike.
   Phones without a gyroscope get a charge meter instead.
+- Like a real alley's big screen, strikes, spares, and turkeys play a short cartoon clip
+  ([`clips.js`](src/games/bowling/clips.js)): a pin rocket, a ball bowling over ten nervous pins,
+  a pin kickline, a broom sweeping up a spare, two pins high-fiving, and a strutting turkey.
+  They're drawn in code frame by frame (no video files), never repeat back to back, and pause with
+  the game. `CONFIG.clips.enabled = false` turns them off.
 
 How the throw is read ([`throw.js`](src/games/bowling/throw.js)): while A is held, the game
 keeps the phone's forward tip speed, left/right turn speed, and wrist twist (a new `twist` on the
@@ -462,9 +474,11 @@ src/
       meta.js               name, description, and tile art for the menu
       index.js              CONFIG, screens, rolling, scorecard, and the game loop
       lane.js               ball, hook, and pin physics, seen from above (pure, tested)
+      bowler.js             the bowler's approach, slide, and phone-driven arm (pure, tested)
       throw.js              reading speed, aim, and spin from the swing (pure, tested)
       scoring.js            ten-pin scoring and the 10th frame (pure, tested)
       render.js             three.js drawing: lane, pins, ball, camera
+      clips.js              big-screen cartoon clips for strikes, spares, and turkeys
       sounds.js             sound effects
     basketball/             Milestone 5: Hoops
       meta.js               name, description, and tile art for the menu

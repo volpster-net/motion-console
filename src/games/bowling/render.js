@@ -12,6 +12,8 @@
  * flipped on its way into the scene (`at` below).
  */
 import * as THREE from 'three';
+import { createPlayer } from '../baseball/players.js';
+import { ballInHand } from './bowler.js';
 import { pinSpots } from './lane.js';
 
 const COLORS = {
@@ -54,6 +56,10 @@ const STRIPES = [
 ];
 /** How long a knocked pin takes to fall flat, in seconds. */
 const FALL_S = 0.35;
+/** Camera lenses (vertical field of view, °) and where the lining-up camera sits behind the bowler (m). */
+const WIDE_FOV = 38;
+const STANCE_FOV = 16;
+const STANCE_EYE = { back: 11, height: 2.8 };
 
 /**
  * @param {HTMLCanvasElement} canvas
@@ -69,8 +75,8 @@ export function createRenderer(canvas, config) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.background);
-  scene.fog = new THREE.Fog(COLORS.background, 26, 40);
-  const camera = new THREE.PerspectiveCamera(38, 16 / 9, 0.05, 60);
+  scene.fog = new THREE.Fog(COLORS.background, 32, 46);
+  const camera = new THREE.PerspectiveCamera(WIDE_FOV, 16 / 9, 0.05, 60);
   /** Every pin shares one shape and one material, made on first use (see makePin). */
   let sharedPinGeometry = null;
   let sharedPinMaterial = null;
@@ -247,16 +253,30 @@ export function createRenderer(canvas, config) {
   scene.add(ball);
   let lastRolled = 0;
 
+  // ---- The bowler ---------------------------------------------------------
+  // Home Run Derby's cartoon player, in a bowling shirt, posed by bowler.js.
+  const bowler = createPlayer({});
+  bowler.root.traverse((part) => (part.castShadow = true));
+  scene.add(bowler.root);
+  const joint = (q) => at(q[0], q[1], q[2]);
+
   // The guide is a line from the ball, turned to the chosen angle: a group
-  // pivoting at the ball, holding a strip that runs ahead of it.
-  const guideLength = 10;
+  // pivoting at the ball, holding a strip that runs ahead of it all the way to
+  // the pins, widening as it goes so it still shows that far away.
+  const guideLength = lane.headPinZ + 0.2;
   const guideMaterial = new THREE.MeshBasicMaterial({
     color: COLORS.guide,
     transparent: true,
     opacity: 0.35,
   });
   const guide = new THREE.Group();
-  const guideStrip = mesh(new THREE.PlaneGeometry(0.03, guideLength), guideMaterial);
+  const guideShape = new THREE.PlaneGeometry(0.03, guideLength);
+  const corners = guideShape.attributes.position;
+  for (let i = 0; i < corners.count; i++) {
+    // Local -y ends up at the far end once the strip is laid flat.
+    if (corners.getY(i) < 0) corners.setX(i, corners.getX(i) * 3);
+  }
+  const guideStrip = mesh(guideShape, guideMaterial);
   guideStrip.rotation.x = -Math.PI / 2;
   guideStrip.position.set(0, 0, guideLength / 2);
   guide.add(guideStrip);
@@ -287,6 +307,7 @@ export function createRenderer(canvas, config) {
    *   pins: import('./lane.js').Pin[],
    *   pinTime: number,                     the lane's clock (s), for falling pins
    *   ballColor: string,
+   *   bowler: Record<string, number[]>,    every joint, from bowlerPose()
    * }} state
    */
   function draw(state) {
@@ -313,12 +334,14 @@ export function createRenderer(canvas, config) {
     } else if (rolling) {
       ball.visible = false;
     } else {
+      // Not rolled yet: in the bowler's hand.
       ball.visible = true;
       lastRolled = 0;
-      const lift = state.holding ? 0.06 : 0;
-      ball.position.copy(at(state.holdX, lane.ballRadius + lift, -0.2));
+      ball.position.copy(joint(ballInHand(state.bowler, lane.ballRadius)));
     }
     ballMaterial.color.set(state.ballColor);
+    bowler.dress(state.ballColor);
+    bowler.pose(state.bowler, joint);
 
     guide.visible = state.showGuide;
     guide.position.copy(at(state.holdX, 0.003, -0.2));
@@ -370,20 +393,41 @@ export function createRenderer(canvas, config) {
     const rolling = state.lane?.ball;
     let eye;
     let target;
+    // A wider lens for the chase, a long one to line up: from further back and
+    // zoomed in, the pins look much closer while the bowler stays the same size.
+    let fov = WIDE_FOV;
+    // Straight behind the bowler, looking straight down the lane.
+    const bowlerZ = state.bowler.lHip[2];
+    const bowlerX = (state.bowler.lHip[0] + state.bowler.rHip[0]) / 2;
     if (state.view === 'follow' && rolling) {
-      const z = Math.min(rolling.z, lane.headPinZ - 3.6);
-      eye = at(rolling.x * 0.5, 0.75, z - 2.4);
-      target = at(rolling.x * 0.3, 0.05, Math.min(z + 8, lane.headPinZ + 1));
+      const z = Math.max(bowlerZ - 3.5, Math.min(rolling.z - 2.4, lane.headPinZ - 3.6));
+      // Near the bowler it stays high behind them, passing over their head;
+      // once clear, it drops down behind the ball.
+      const near = Math.max(0, Math.min(1, 1 - (z - bowlerZ) / 3.5));
+      const x = bowlerX * near + rolling.x * 0.5 * (1 - near);
+      eye = at(x, 0.75 + 1.3 * near, z);
+      target = at(
+        x * near + rolling.x * 0.3 * (1 - near),
+        0.05,
+        Math.min(z + 8, lane.headPinZ + 1),
+      );
     } else if (state.view === 'pins') {
       eye = at(0, 1.05, lane.headPinZ - 3.2);
       target = at(0, 0.12, lane.headPinZ + 0.6);
     } else {
-      eye = at(state.holdX * 0.7, 1.0, -2.5);
-      target = at(state.holdX * 0.2, 0, 7);
+      // Behind and above the bowler, walking up with them on the approach.
+      eye = at(bowlerX, STANCE_EYE.height, bowlerZ - STANCE_EYE.back);
+      target = at(bowlerX, -0.8, bowlerZ + 13);
+      fov = STANCE_FOV;
     }
     const glide = state.view === 'follow' ? 1 - Math.exp(-dt / 0.12) : 1 - Math.exp(-dt / 0.35);
     cameraAt.lerp(eye, dt === 0 ? 1 : glide);
     lookAt.lerp(target, dt === 0 ? 1 : glide);
+    const zoom = dt === 0 ? fov : camera.fov + (fov - camera.fov) * glide;
+    if (Math.abs(zoom - camera.fov) > 1e-3) {
+      camera.fov = zoom;
+      camera.updateProjectionMatrix();
+    }
     camera.position.copy(cameraAt);
     camera.lookAt(lookAt);
   }
@@ -440,6 +484,14 @@ export function createRenderer(canvas, config) {
     /** Releases the GPU memory and the WebGL context, so starting again doesn't pile them up. */
     destroy() {
       for (const item of new Set(disposables)) item.dispose();
+      bowler.root.traverse((part) => {
+        if (!(part instanceof THREE.Mesh)) return;
+        part.geometry.dispose();
+        for (const material of [part.material].flat()) {
+          material.map?.dispose();
+          material.dispose();
+        }
+      });
       renderer.dispose();
       renderer.forceContextLoss();
     },
